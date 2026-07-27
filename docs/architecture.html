@@ -739,6 +739,15 @@ impl Pipeline {
         <td>Windows full-screen renderer + hardware decode.</td></tr>
   </table>
 
+  <div class="callout warn"><span class="lbl">webrtc-rs 0.11 cannot complete a DTLS handshake with current Chrome.</span>
+  Discovered at M3, 27 July 2026. Modern Chrome offers post-quantum hybrid key agreement in its DTLS ClientHello, and
+  <code>webrtc-dtls</code> 0.10 knows only P256, P384 and X25519. It fails with
+  <code>Failed to start manager dtls: invalid named curve</code>, and the symptom is misleading: ICE reaches
+  <i>connected</i> and signalling looks healthy, so it presents as media that never arrives rather than as a handshake
+  error. <b>Use webrtc 0.17.2 or newer</b>, which handles unknown curves. This is a good argument for pinning
+  deliberately rather than tracking a version family: the failure is invisible without turning on
+  <code>webrtc_dtls</code> logging.</p>
+
   <h3>12.1 Toolchain &amp; build</h3>
 <pre><code># prerequisites: Xcode command-line tools (for the macOS SDK), stable Rust
 rustup toolchain install stable
@@ -780,7 +789,7 @@ cargo run  -p host
     <tr><td><b>M0</b></td><td>Virtual-display spike <b>(done)</b></td><td>Verified 27 July 2026 on macOS 26.5: display created, visible to public CoreGraphics, removed cleanly with no ghost. See <code>crates/virtual-display</code>.</td><td>done</td></tr>
     <tr><td><b>M1</b></td><td>Capture to disk <b>(done)</b></td><td>Verified 27 July 2026: ScreenCaptureKit delivers BGRA frames from the virtual display, written to PNG. See <code>crates/capture</code>.</td><td>done</td></tr>
     <tr><td><b>M2</b></td><td>Encode and verify <b>(done)</b></td><td>Verified 27 July 2026: VideoToolbox H.264 Main, Annex-B, zero-copy from capture. ffprobe reports <code>has_b_frames=0</code> and ffmpeg decodes with zero errors. See <code>crates/encoder</code>.</td><td>done</td></tr>
-    <tr><td><b>M3</b></td><td>WebRTC to browser (mirror)</td><td>Stream the <i>main</i> display to a browser full-screen; the whole network path proven end-to-end.</td><td>4–7 days</td></tr>
+    <tr><td><b>M3</b></td><td>WebRTC to browser <b>(done)</b></td><td>Verified 27 July 2026 with a real headless Chrome doing the actual handshake: connected, codec video/H264, frames decoded at 1440x900. See <code>crates/transport</code>.</td><td>done</td></tr>
     <tr><td><b>M4</b></td><td><b>Extended display E2E</b></td><td>Point capture at the virtual display → drag a window over → it appears on Windows. <b>v1 done.</b></td><td>2–4 days</td></tr>
     <tr><td><b>M5</b></td><td>Interactive input</td><td>DataChannel input → <code>CGEvent</code> injection; mouse/keyboard work on the second screen.</td><td>~1 week</td></tr>
     <tr><td><b>M6</b></td><td>Polish</td><td>Tray UI, QR/URL, auth token, resolution picker, auto-reconnect, multi-client, HEVC.</td><td>ongoing</td></tr>

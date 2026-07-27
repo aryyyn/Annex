@@ -32,6 +32,9 @@
 //! - `m2`: the same, but encodes to H.264 with VideoToolbox and writes an
 //!   Annex-B elementary stream. This is the first zero-copy path: the pixel
 //!   buffer goes capture to encoder without ever reaching the CPU.
+//! - `m3`: serves the whole thing over WebRTC to a browser. Uses the main
+//!   display by default so the network path is proven independently of the
+//!   private API; `m3 virtual` uses the virtual display, which is M4.
 //!
 //! ```text
 //! cargo run -p annex-host              # M0, 20 second hold
@@ -40,11 +43,14 @@
 //! cargo run -p annex-host -- m1 30     # M1, 30 frames
 //! cargo run -p annex-host -- m1 4 2    # M1, 4 frames at 2x (HiDPI probe)
 //! cargo run -p annex-host -- m2 60     # M2, 60 frames to out.h264
+//! cargo run -p annex-host -- m3        # M3, stream the main display
+//! cargo run -p annex-host -- m3 virtual # M4, stream the virtual display
 //! ```
 
 mod displays;
 mod m1;
 mod m2;
+mod m3;
 mod pngout;
 mod tray;
 
@@ -84,6 +90,17 @@ fn main() {
         let out = std::path::PathBuf::from("out.h264");
         if let Err(e) = m2::run(frames, out) {
             eprintln!("\n  M2 failed: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    if arg1 == "m3" {
+        let arg2 = std::env::args().nth(2).unwrap_or_default();
+        let use_virtual = arg2 == "virtual";
+        let port = arg2.parse().unwrap_or(8787);
+        if let Err(e) = m3::run(use_virtual, port) {
+            eprintln!("\n  M3 failed: {e}");
             std::process::exit(1);
         }
         return;

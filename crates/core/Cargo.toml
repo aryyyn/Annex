@@ -9,6 +9,10 @@ repository.workspace   = true
 authors.workspace      = true
 
 [dependencies]
+serde = { workspace = true, features = ["derive"] }
+
+[dev-dependencies]
+serde_json.workspace = true
 # M0 needs nothing beyond std. Wire these in as the milestones land:
 #   serde, serde_json  -> when protocol.rs starts crossing the wire  (M3)
 #   thiserror          -> when error.rs grows past a hand-written Display

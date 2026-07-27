@@ -11,19 +11,21 @@ No HDMI. No capture card. No cloud. Both machines just need to be on the same Wi
 The Mac runs a single Rust binary. The second machine opens a URL in its browser.
 
 > [!NOTE]
-> **Status: M0, M1 and M2 done.** Virtual display, capture, and H.264 encode all work,
-> verified 27 July 2026 on macOS 26.5. Transport is next. See [Roadmap](#roadmap).
+> **Status: M0 through M3 done.** The whole pipeline runs: virtual display, capture,
+> H.264 encode, and WebRTC streaming to a browser. Verified 27 July 2026 on macOS 26.5.
+> M4 joins the two halves. See [Roadmap](#roadmap).
 >
 > ```
-> $ cargo run -p annex-host -- m2 45
->   sample   0  113196 bytes  KEY  [SPS(11), PPS(4), SEI(58), IDR slice(113107)]
->   encoder: 45 frames in, 45 out, 3 keyframes, 0 malformed
->   structure: 54 NAL units, 3 SPS, 3 PPS, 3 IDR, 42 non-IDR slices
->   presentation timestamps are monotonic: no B-frames, no reordering
->
-> $ ffprobe out.h264
->   profile=Main  width=1920  height=1080  has_b_frames=0  nb_read_frames=45
+> $ cargo run -p annex-host -- m3
+>   main display 1 at 1440x900
+>   serving on 0.0.0.0:8787
+>   open this on the other machine:
+>       http://192.168.1.75:8787/
+>   clients 1  |  encoded 51 frames, 1 keyframes  |  sent 47  dropped 0
 > ```
+>
+> Confirmed with a real headless Chrome doing the actual handshake:
+> `conn: connected, codec: video/H264, 1440x900, frames decoded`.
 
 ## How it works
 
@@ -97,6 +99,7 @@ cargo check --workspace
 cargo run -p annex-host -- 20     # M0: create a display, hold 20s, remove it
 cargo run -p annex-host -- m1 10  # M1: capture 10 frames to ./captures
 cargo run -p annex-host -- m2 45  # M2: encode 45 frames to out.h264
+cargo run -p annex-host -- m3     # M3: stream the main display, open the printed URL
 ```
 
 M1 and M2 need the **Screen Recording** permission. Running under `cargo` means macOS attaches the
@@ -120,7 +123,7 @@ already loaded into the process.
 | **M0** | Virtual-display spike | **Done.** A fake monitor appears in System Settings and drops cleanly on exit |
 | **M1** | Capture to disk | **Done.** ScreenCaptureKit delivers BGRA frames from the virtual display, written to PNG |
 | **M2** | Encode and verify | **Done.** VideoToolbox H.264 Main, Annex-B, zero-copy. ffmpeg decodes it with zero errors |
-| **M3** | WebRTC to browser | Stream the *main* display full-screen, proving the whole network path |
+| **M3** | WebRTC to browser | **Done.** Chrome connects, negotiates H.264, and decodes frames over the LAN |
 | **M4** | Extended display E2E | Point capture at the virtual display. **v1 done.** |
 | **M5** | Interactive input | DataChannel input, `CGEvent` injection |
 | **M6** | Polish | Tray UI, QR code, auth token, resolution picker, multi-client, HEVC |

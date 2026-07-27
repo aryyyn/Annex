@@ -5,7 +5,8 @@
 //! its origin in the global arrangement, and both can change mid-session, so
 //! the host is the only place that can map them correctly.
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
 pub enum InputEvent {
     MouseMove {
         x: f64,
@@ -26,7 +27,8 @@ pub enum InputEvent {
     },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum MouseButton {
     Left,
     Right,
@@ -35,7 +37,7 @@ pub enum MouseButton {
 
 /// Modifier bitflags, matching the browser's `KeyboardEvent` booleans rather
 /// than any Apple constant. The host translates to `CGEventFlags`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub struct KeyMods {
     pub shift: bool,
     pub ctrl: bool,

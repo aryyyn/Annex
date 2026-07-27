@@ -17,9 +17,12 @@ annex-core            = { workspace = true }
 annex-virtual-display = { workspace = true }
 annex-capture.workspace = true
 annex-encoder.workspace = true
-annex-transport       = { workspace = true }
+annex-transport.workspace = true
 annex-input           = { workspace = true }
 png = "0.18.1"
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
+ctrlc = "3.5.2"
+env_logger = "0.11.11"
 
 # M6 wires the tray UI in.
 # tokio              = { workspace = true }
