@@ -83,6 +83,9 @@ pub type EncodedSink = Box<dyn FnMut(EncodedSample) + Send + 'static>;
 struct Shared {
     sink: Mutex<EncodedSink>,
     stats: Mutex<Stats>,
+    /// Presentation timestamp of the previous output sample, used to derive
+    /// each sample's real duration. See [`Encoder`] for why that matters.
+    last_pts: Mutex<Option<i64>>,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -119,6 +122,7 @@ impl Encoder {
         let shared = Box::into_raw(Box::new(Shared {
             sink: Mutex::new(out),
             stats: Mutex::new(Stats::default()),
+            last_pts: Mutex::new(None),
         }));
 
         let codec = match cfg.codec {
@@ -362,7 +366,31 @@ unsafe extern "C-unwind" fn output_callback(
     let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let sample = unsafe { &*sample };
         match extract(sample) {
-            Some(encoded) => {
+            Some(mut encoded) => {
+                // Fill in the real duration: the gap since the previous frame.
+                //
+                // This has to be measured, not assumed. ScreenCaptureKit emits
+                // only on change, so a still desktop produces nothing and then
+                // one frame after an arbitrary gap. Reporting a fixed 1/fps
+                // here would advance the receiver's RTP clock far more slowly
+                // than wall time, and its jitter buffer grows without bound to
+                // compensate. That is felt as latency that gets worse the
+                // longer the session runs.
+                {
+                    let mut last = shared.last_pts.lock().unwrap();
+                    let dur_us = match *last {
+                        Some(prev) if encoded.pts > prev => (encoded.pts - prev) as u64,
+                        // First frame, or a non-monotonic timestamp. One frame
+                        // at 60 fps is a safe assumption for a single sample.
+                        _ => 16_667,
+                    };
+                    // Clamp so a pathological gap cannot desynchronise the
+                    // receiver, while still allowing genuinely long still
+                    // periods to advance the clock honestly.
+                    let dur_us = dur_us.clamp(1_000, 5_000_000);
+                    encoded.dur = std::time::Duration::from_micros(dur_us);
+                    *last = Some(encoded.pts);
+                }
                 {
                     let mut s = shared.stats.lock().unwrap();
                     s.frames_out += 1;

@@ -42,6 +42,21 @@ function newPeerConnection() {
   };
 
   pc.ontrack = (event) => {
+    // Shrink the jitter buffer. By default Chrome buffers a few hundred
+    // milliseconds to smooth out network jitter, which is right for watching a
+    // video and completely wrong for a second monitor: here, latency is the
+    // whole product and a dropped frame matters far less than a late one.
+    //
+    // On a LAN there is almost no jitter to absorb, so asking for zero costs
+    // essentially nothing. Two APIs, because browsers disagree on which they
+    // support; setting both is harmless.
+    try {
+      event.receiver.jitterBufferTarget = 0;
+    } catch {}
+    try {
+      event.receiver.playoutDelayHint = 0;
+    } catch {}
+
     video.srcObject = event.streams[0];
     setStatus("Connected");
     overlay.classList.add("hidden");

@@ -140,12 +140,29 @@ impl Server {
         }
     }
 
-    /// Whether a client has asked for a keyframe since the last check.
+    /// Whether any client has asked for a keyframe since the last check.
     ///
-    /// Clearing on read makes this a one-shot: the caller forces exactly one
-    /// IDR per request rather than every frame until it happens to notice.
+    /// Two sources: a peer reaching Connected, which has no reference frame
+    /// yet, and an RTCP picture loss indication, which means a decoder lost
+    /// sync and everything until the next IDR is garbage.
+    ///
+    /// Clearing on read makes this a one-shot, so the caller forces exactly one
+    /// IDR per request rather than one per frame until it happens to notice.
     pub fn take_keyframe_request(&self) -> bool {
-        self.state.want_keyframe.swap(false, Ordering::SeqCst)
+        // Sessions collect PLIs on their own RTCP tasks; drain them here.
+        let mut want = self.state.want_keyframe.swap(false, Ordering::SeqCst);
+        if let Ok(sessions) = self.state.sessions.try_lock() {
+            for s in sessions.iter() {
+                if s.take_keyframe_request() {
+                    want = true;
+                    self.state
+                        .stats
+                        .keyframe_requests
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+            }
+        }
+        want
     }
 
     pub fn stats(&self) -> &Stats {

@@ -681,6 +681,15 @@ impl Pipeline {
   offers a whole ladder of modes rather than the single one we apply, which is the likely fix and is M6 work
   (resolution picker). Nothing before M6 depends on it.</p>
 
+  <div class="callout warn"><span class="lbl">Measured 27 July 2026: the frame duration handed to WebRTC must be the
+  real one.</span> The receiver advances its RTP clock by <code>duration &times; 90000</code> per sample, and paces
+  playback from that clock. ScreenCaptureKit emits <b>only on change</b>, so real intervals vary enormously; reporting
+  a nominal 1/fps advances the receiver's clock far more slowly than wall time, and its jitter buffer grows without
+  bound to compensate. Measured effect of getting this wrong: <b>249 ms per frame of jitter buffer, 8.5 seconds of
+  freezes in a 14 second window, and 8 fps delivered out of 30</b>. With the duration computed from consecutive
+  capture timestamps: <b>15 ms, zero freezes, 29 fps</b>. Note the build type was almost irrelevant here, an
+  unoptimised build with the fix measured 19 ms, so this is a correctness bug and not a performance one.</p>
+
   <div class="callout"><span class="lbl">Bandwidth:</span> 1080p60 at H.264 real-time is roughly <b>8–20 Mbit/s</b>
   depending on motion. Static desktops compress to almost nothing; video/scrolling spikes it. WebRTC's congestion
   control adapts bitrate automatically, so wire that signal to <code>encoder.set_bitrate()</code>.</p>

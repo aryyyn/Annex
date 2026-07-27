@@ -4,6 +4,7 @@ use crate::RtcError;
 use annex_core::protocol::{IceCandidate, Sdp};
 use annex_core::EncodedSample;
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use webrtc::api::interceptor_registry::register_default_interceptors;
@@ -15,6 +16,7 @@ use webrtc::media::Sample;
 use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use webrtc::peer_connection::RTCPeerConnection;
+use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
 use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
 use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 
@@ -44,7 +46,10 @@ impl Default for RtcConfig {
 pub struct Session {
     pc: Arc<RTCPeerConnection>,
     track: Arc<TrackLocalStaticSample>,
+    /// Fallback only, for a sample that arrives with no measured duration.
     frame_dur: Duration,
+    /// Set when the client sends a picture loss indication.
+    want_keyframe: Arc<AtomicBool>,
 }
 
 impl Session {
@@ -99,14 +104,36 @@ impl Session {
             "annex".to_owned(),
         ));
 
-        pc.add_track(track.clone())
+        let sender = pc
+            .add_track(track.clone())
             .await
             .map_err(|e| RtcError::Negotiation(e.to_string()))?;
+
+        // RTCP has to be drained or it backs up, and it carries the two signals
+        // that matter: PLI, meaning the client's decoder lost sync and needs a
+        // fresh IDR, and REMB/receiver reports feeding congestion control.
+        // Ignoring PLI leaves a broken client showing garbage until the next
+        // scheduled keyframe, which at a 4 second interval is an eternity.
+        let want_key = Arc::new(AtomicBool::new(false));
+        {
+            let want = Arc::clone(&want_key);
+            tokio::spawn(async move {
+                let mut buf = vec![0u8; 1500];
+                while let Ok((packets, _)) = sender.read(&mut buf).await {
+                    for p in packets {
+                        if p.as_any().downcast_ref::<PictureLossIndication>().is_some() {
+                            want.store(true, Ordering::SeqCst);
+                        }
+                    }
+                }
+            });
+        }
 
         Ok(Self {
             pc,
             track,
             frame_dur: Duration::from_secs_f64(1.0 / cfg.fps.max(1) as f64),
+            want_keyframe: want_key,
         })
     }
 
@@ -153,11 +180,20 @@ impl Session {
     /// H.264 payloader, splits it into RTP packets, and handles NACK
     /// retransmission, so nothing here has to know about packet sizes.
     pub async fn write_sample(&self, s: &EncodedSample) -> Result<(), RtcError> {
+        // The duration is what advances the receiver's RTP clock, so it must be
+        // the real gap since the previous frame rather than a nominal 1/fps.
+        // See the note in `annex-encoder`: getting this wrong inflates the
+        // client's jitter buffer and shows up as steadily worsening lag.
+        let duration = if s.dur.is_zero() {
+            self.frame_dur
+        } else {
+            s.dur
+        };
         self.track
             .write_sample(&Sample {
                 data: s.data.clone().into(),
                 timestamp: SystemTime::now(),
-                duration: self.frame_dur,
+                duration,
                 ..Default::default()
             })
             .await
@@ -166,6 +202,14 @@ impl Session {
 
     pub fn peer(&self) -> Arc<RTCPeerConnection> {
         Arc::clone(&self.pc)
+    }
+
+    /// Whether the client has asked for a keyframe since the last check.
+    ///
+    /// One-shot: reading it clears it, so exactly one IDR is forced per
+    /// request rather than one per frame until someone notices.
+    pub fn take_keyframe_request(&self) -> bool {
+        self.want_keyframe.swap(false, Ordering::SeqCst)
     }
 
     pub async fn close(&self) {
