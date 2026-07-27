@@ -1,0 +1,15 @@
+# local agent instructions, not shared
+CLAUDE.md
+.claude/
+
+# macOS
+.DS_Store
+
+# Rust
+/target/
+**/*.rs.bk
+
+# editors
+.idea/
+.vscode/
+*.swp

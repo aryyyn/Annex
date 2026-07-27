@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Annex: Architecture &amp; Design Document</title>
+<style>
+  :root{
+    --ink:#1a1d24; --muted:#5b6472; --accent:#c0392b; --accent2:#2c3e50;
+    --line:#d9dee6; --codebg:#f5f6f8; --callout:#fff7f5; --ok:#1e8449; --warn:#b9770e;
+  }
+  *{ -webkit-print-color-adjust:exact; print-color-adjust:exact; box-sizing:border-box; }
+  html{ font-size:11pt; }
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    color:var(--ink); line-height:1.5; margin:0;
+  }
+  @page{ size:Letter; margin:18mm 16mm 16mm 16mm; }
+  h1,h2,h3,h4{ line-height:1.25; color:var(--accent2); font-weight:700; }
+  h1{ font-size:20pt; margin:0 0 6px; border-bottom:3px solid var(--accent); padding-bottom:6px; }
+  h2{ font-size:15pt; margin:22px 0 8px; border-bottom:1px solid var(--line); padding-bottom:4px; }
+  h3{ font-size:12.5pt; margin:16px 0 5px; color:var(--accent); }
+  h4{ font-size:11pt; margin:12px 0 3px; color:var(--accent2); }
+  p{ margin:6px 0; }
+  a{ color:var(--accent); text-decoration:none; }
+  code{ font-family:"SF Mono",Menlo,Consolas,monospace; font-size:9.2pt; background:var(--codebg);
+        padding:1px 4px; border-radius:3px; }
+  pre{ background:var(--codebg); border:1px solid var(--line); border-left:3px solid var(--accent2);
+       border-radius:5px; padding:10px 12px; overflow:auto; font-size:8.4pt; line-height:1.4;
+       font-family:"SF Mono",Menlo,Consolas,monospace; white-space:pre; }
+  pre code{ background:none; padding:0; font-size:inherit; }
+  table{ border-collapse:collapse; width:100%; margin:10px 0; font-size:9.6pt; }
+  th,td{ border:1px solid var(--line); padding:6px 8px; text-align:left; vertical-align:top; }
+  th{ background:var(--accent2); color:#fff; font-weight:600; }
+  tr:nth-child(even) td{ background:#fafbfc; }
+  ul,ol{ margin:6px 0 6px 0; padding-left:22px; }
+  li{ margin:3px 0; }
+  .cover{ height:245mm; display:flex; flex-direction:column; justify-content:center;
+          page-break-after:always; }
+  .cover .kicker{ color:var(--accent); font-weight:700; letter-spacing:2px; font-size:11pt; text-transform:uppercase; }
+  .cover h1{ font-size:34pt; border:none; margin:10px 0 4px; }
+  .cover .sub{ font-size:15pt; color:var(--muted); margin:0 0 26px; }
+  .cover .meta{ font-size:10pt; color:var(--muted); border-top:1px solid var(--line); padding-top:14px; }
+  .cover .meta b{ color:var(--ink); }
+  .tag{ display:inline-block; background:var(--codebg); border:1px solid var(--line);
+        border-radius:20px; padding:2px 10px; font-size:8.5pt; color:var(--muted); margin:2px 4px 2px 0; }
+  .callout{ background:var(--callout); border:1px solid #f2c9c0; border-left:4px solid var(--accent);
+            border-radius:5px; padding:8px 12px; margin:10px 0; font-size:9.8pt; }
+  .callout.ok{ background:#f2fbf5; border-color:#bde5cb; border-left-color:var(--ok); }
+  .callout.warn{ background:#fff9ec; border-color:#f0dca6; border-left-color:var(--warn); }
+  .callout .lbl{ font-weight:700; }
+  .callout.ok .lbl{ color:var(--ok); } .callout .lbl{ color:var(--accent); } .callout.warn .lbl{ color:var(--warn); }
+  section{ page-break-before:always; }
+  section.nobreak{ page-break-before:auto; }
+  pre,table,.callout,figure{ page-break-inside:avoid; }
+  h2,h3,h4{ page-break-after:avoid; }
+  .toc ol{ list-style:none; padding-left:0; counter-reset:sec; }
+  .toc > ol > li{ counter-increment:sec; margin:5px 0; font-weight:600; }
+  .toc > ol > li::before{ content:counter(sec) ".  "; color:var(--accent); }
+  .toc ol ol{ padding-left:20px; font-weight:400; font-size:9.6pt; color:var(--muted); }
+  .toc ol ol li{ margin:2px 0; }
+  .small{ font-size:9pt; color:var(--muted); }
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  hr{ border:none; border-top:1px solid var(--line); margin:14px 0; }
+  .kbd{ font-family:"SF Mono",Menlo,monospace; background:#eceff3; border:1px solid #cdd3dc;
+        border-bottom-width:2px; border-radius:4px; padding:0 5px; font-size:8.6pt; }
+
+  /* ---- inline architecture diagram (§4.1) ---- */
+  figure.diagram{ margin:12px 0 6px; }
+  figure.diagram svg{ width:100%; height:auto; display:block; }
+  figure.diagram figcaption{ font-size:8.6pt; color:var(--muted); margin-top:8px; text-align:center; }
+  .ad text{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; }
+  .ad .frame{ fill:#fbfcfe; stroke:var(--accent2); stroke-width:1.8; }
+  .ad .band{ fill:#f4f7fa; stroke:#c3ccd8; stroke-width:1.2; stroke-dasharray:6 4; }
+  .ad .box{ fill:#ffffff; stroke:#b6c0cc; stroke-width:1.3; }
+  .ad .box.priv{ fill:var(--callout); stroke:var(--accent); stroke-width:1.8; }
+  .ad .box.screen{ fill:#eaf0f7; stroke:var(--accent2); stroke-width:1.5; stroke-dasharray:6 3; }
+  .ad .box.p2{ fill:#f8f9fb; stroke:#a7b2c0; stroke-width:1.3; stroke-dasharray:5 3; }
+  .ad .key{ fill:#ffffff; stroke:var(--line); stroke-width:1.2; }
+  .ad .hdr{ font-size:15px; font-weight:700; fill:var(--accent2); letter-spacing:.4px; }
+  .ad .ttl{ font-size:16px; font-weight:700; fill:var(--accent2); }
+  .ad .ttl.red{ fill:var(--accent); }
+  .ad .sub{ font-size:12px; fill:var(--ink); }
+  .ad .mono{ font-family:"SF Mono",Menlo,Consolas,monospace; font-size:11px; fill:var(--ink); }
+  .ad .note{ font-size:11px; fill:var(--muted); }
+  .ad .note.i{ font-style:italic; }
+  .ad .tag2{ font-size:10.5px; font-weight:700; fill:var(--accent); letter-spacing:.6px; }
+  .ad .flow{ font-size:12px; fill:var(--muted); }
+  .ad .flow.s{ font-size:10.5px; }
+  .ad line,.ad polyline{ fill:none; stroke:#6b7684; stroke-width:1.7; }
+  .ad line.red{ stroke:var(--accent); }
+  .ad line.soft,.ad polyline.soft{ stroke:#98a3b1; stroke-dasharray:5 3; }
+</style>
+</head>
+<body>
+
+<!-- ============================ COVER ============================ -->
+<div class="cover">
+  <div class="kicker">Architecture &amp; Design Document</div>
+  <h1>Annex</h1>
+  <div style="font-size:13pt;color:var(--accent);font-style:italic;margin:-2px 0 10px;">Extra desktop, no extra hardware.</div>
+  <div class="sub">A Rust system that turns a Windows PC into a wireless <b>extended</b> monitor for a Mac. No HDMI, no cables.</div>
+  <div>
+    <span class="tag">Rust</span><span class="tag">macOS host</span><span class="tag">Windows / browser client</span>
+    <span class="tag">WebRTC</span><span class="tag">ScreenCaptureKit</span><span class="tag">VideoToolbox</span>
+    <span class="tag">CGVirtualDisplay</span><span class="tag">LAN / Wi-Fi</span>
+  </div>
+  <div class="meta">
+    <p><b>Project name:</b> Annex &nbsp;·&nbsp; <b>Version:</b> 1.0 (design) &nbsp;·&nbsp; <b>Date:</b> 24 July 2026</p>
+    <p><b>Goal:</b> Mac is the primary computer; a second laptop/PC becomes a real, extended second desktop over the local network.</p>
+    <p><b>Audience:</b> the developer(s) building it. Assumes general programming ability; explains all macOS/Rust specifics.</p>
+  </div>
+</div>
+
+<!-- ============================ TOC ============================ -->
+<section class="nobreak toc">
+  <h1>Table of Contents</h1>
+  <ol>
+    <li>Executive Summary
+      <ol><li>What we are building</li><li>The core insight (two halves)</li></ol></li>
+    <li>Goals, Non-Goals &amp; Success Criteria</li>
+    <li>Technical Background &amp; Key Constraints</li>
+    <li>High-Level Architecture
+      <ol><li>System context diagram</li><li>Process model</li><li>End-to-end data flow</li></ol></li>
+    <li>Component Design
+      <ol><li>virtual-display</li><li>capture</li><li>encoder</li><li>transport &amp; signaling</li><li>web client</li><li>input (phase 2)</li><li>core / host app</li></ol></li>
+    <li>Workspace &amp; Crate Layout</li>
+    <li>Concurrency &amp; Threading Model</li>
+    <li>Sequence Diagrams</li>
+    <li>Key Data Structures &amp; APIs</li>
+    <li>Performance &amp; Latency Budget</li>
+    <li>Security, Permissions &amp; Privacy</li>
+    <li>Dependencies (Crates) &amp; Build</li>
+    <li>Risks &amp; Mitigations</li>
+    <li>Roadmap &amp; Milestones</li>
+    <li>Testing &amp; Verification Strategy</li>
+    <li>Appendix A: Reverse-engineered CGVirtualDisplay header</li>
+    <li>Appendix B: References</li>
+    <li>Appendix C: Glossary</li>
+  </ol>
+</section>
+
+<!-- ============================ 1 ============================ -->
+<section>
+  <h1>1. Executive Summary</h1>
+
+  <h3>1.1 What we are building</h3>
+  <p><b>Annex</b> is a two-part application. On the Mac (the <i>host</i>) a Rust program creates a
+  <b>virtual monitor</b> that macOS treats as a genuine second display, and you can drag windows onto it exactly as
+  if a physical monitor were plugged in. The Rust program captures that virtual monitor's pixels, encodes them to
+  video, and streams them over Wi-Fi/LAN to a <i>client</i> running on the Windows laptop. The client renders the
+  video full-screen, so the Windows laptop <b>becomes</b> the second monitor. No HDMI cable, no capture card, just
+  the two machines on the same network.</p>
+
+  <p>Version 1's client is an ordinary <b>web browser</b> (zero install on Windows); a native Rust client is a
+  later milestone. Optionally, the client can send mouse/keyboard input back to the Mac so the second screen is
+  interactive, not just a viewer.</p>
+
+  <div class="callout ok"><span class="lbl">Why this is fundamentally possible:</span>
+  every piece already exists in shipping software: <b>DeskPad</b> and <b>BetterDummy</b> prove the virtual-display
+  trick; <b>Deskreen</b> proves the browser-streaming trick. Annex combines both, in one Rust codebase, as a
+  true <i>extended</i> (not mirrored) display.</p>
+
+  <h3>1.2 The core insight: this is two separate problems</h3>
+  <p>The single most important thing to understand before writing any code is that the project is <b>two very
+  different sub-systems</b> bolted together. They share almost no techniques and differ enormously in difficulty.</p>
+
+  <table>
+    <tr><th>Half</th><th>Job</th><th>Mechanism</th><th>Difficulty</th></tr>
+    <tr><td><b>Half 1: Virtual display</b></td><td>Make macOS believe a monitor is attached, so windows can live there</td>
+        <td>Private, undocumented <code>CGVirtualDisplay</code> APIs inside CoreGraphics</td><td><b>Hard</b> (private API)</td></tr>
+    <tr><td><b>Half 2: Capture + stream</b></td><td>Grab that display's pixels, encode, send to Windows, render</td>
+        <td>ScreenCaptureKit → VideoToolbox → WebRTC → browser</td><td><b>Well-trodden</b> (standard video streaming)</td></tr>
+  </table>
+
+  <p>If we build only Half 2, we have "our own Deskreen" that mirrors the main screen and relies on a third-party
+  tool (BetterDisplay) for the extend. If we build <b>both</b>, Annex is a complete, self-contained product.
+  The roadmap (§14) deliberately sequences Half 2 first (it is de-riskable and demoable early) and folds in Half 1
+  once the streaming pipeline works end-to-end.</p>
+</section>
+
+<!-- ============================ 2 ============================ -->
+<section>
+  <h1>2. Goals, Non-Goals &amp; Success Criteria</h1>
+
+  <h3>2.1 Goals (v1)</h3>
+  <ul>
+    <li><b>Mac as host:</b> the Mac is the primary computer whose desktop is extended.</li>
+    <li><b>True extend, not mirror:</b> the Windows screen is a <i>new</i> desktop area, not a copy of the Mac's screen.</li>
+    <li><b>Wireless over LAN:</b> both machines on the same Wi-Fi/router; no HDMI, no capture hardware.</li>
+    <li><b>Zero-install client (v1):</b> Windows just opens a URL in a browser.</li>
+    <li><b>One language:</b> the host and (later) native client are both Rust.</li>
+    <li><b>Usable latency:</b> smooth for reference material, docs, dashboards, video playback; target &lt; 60 ms glass-to-glass on good Wi-Fi.</li>
+    <li><b>Configurable resolution &amp; HiDPI</b> for the virtual display.</li>
+  </ul>
+
+  <h3>2.2 Non-goals (explicitly out of scope for v1)</h3>
+  <ul>
+    <li><b>Internet / NAT traversal.</b> LAN only. No STUN/TURN servers, no cloud relay.</li>
+    <li><b>Mac App Store distribution.</b> The private virtual-display API forbids it; we ship as a signed local app.</li>
+    <li><b>Audio</b> forwarding.</li>
+    <li><b>The reverse direction</b> (Windows host → Mac client).</li>
+    <li><b>Interactive input</b> is a <i>phase-2</i> goal, not v1.</li>
+    <li><b>Multi-client / multi-monitor fan-out</b>, designed-for but not built in v1.</li>
+  </ul>
+
+  <h3>2.3 Success criteria (definition of done for v1)</h3>
+  <ol>
+    <li>Launch host on Mac → a new display appears in <b>System Settings → Displays</b>.</li>
+    <li>Open the host's URL in a Windows browser on the same network → the virtual display's contents appear full-screen.</li>
+    <li>Drag a window from the Mac's main screen onto the virtual display → it shows up on the Windows laptop.</li>
+    <li>Motion (scrolling, a playing video) is smooth (≥ 30 fps) with sub-100 ms perceived lag on Wi-Fi.</li>
+    <li>Closing the host cleanly removes the virtual display (no ghost monitors left behind).</li>
+  </ol>
+</section>
+
+<!-- ============================ 3 ============================ -->
+<section>
+  <h1>3. Technical Background &amp; Key Constraints</h1>
+
+  <h3>3.1 The macOS media stack we depend on</h3>
+  <table>
+    <tr><th>Concern</th><th>API / Framework</th><th>Public?</th><th>Notes</th></tr>
+    <tr><td>Create virtual monitor</td><td><code>CGVirtualDisplay*</code> (CoreGraphics)</td><td>❌ Private</td>
+        <td>4 undocumented Obj-C classes. No kext, no DriverKit, no root, no SIP-disable.</td></tr>
+    <tr><td>Capture a display's pixels</td><td><b>ScreenCaptureKit</b> (<code>SCStream</code>)</td><td>✅ Public</td>
+        <td>macOS 12.3+. GPU-accelerated, delivers <code>CVPixelBuffer</code>. Requires Screen Recording permission.</td></tr>
+    <tr><td>Hardware video encode</td><td><b>VideoToolbox</b> (<code>VTCompressionSession</code>)</td><td>✅ Public</td>
+        <td>C API. H.264 &amp; HEVC on the media engine. Accepts <code>CVPixelBuffer</code> directly (near zero-copy).</td></tr>
+    <tr><td>Real-time transport</td><td><b>WebRTC</b> (webrtc-rs)</td><td>✅ Pure Rust</td>
+        <td>No native libwebrtc build. Congestion control, packet loss recovery, browser-compatible.</td></tr>
+    <tr><td>Input injection (phase 2)</td><td><code>CGEvent</code> (CoreGraphics)</td><td>✅ Public</td>
+        <td>Requires Accessibility permission. Maps client input → Mac events.</td></tr>
+  </table>
+
+  <div class="callout"><span class="lbl">The one true difficulty:</span> <code>CGVirtualDisplay</code> is
+  undocumented. It is stable enough that DeskPad/BetterDummy rely on it across many macOS releases, but Apple can
+  change its shape between versions. We isolate <b>all</b> private-API contact inside a single crate so breakage is
+  contained to one file (§5.1, §13).</p>
+
+  <h3>3.2 Why a virtual display is required at all</h3>
+  <p>Screen-sharing tools can only capture pixels that macOS is <i>already rendering somewhere</i>. To get a
+  <i>new</i> desktop area (extend), some display must exist for the windows to occupy. A physical monitor does this
+  via HDMI/EDID; a "dummy plug" fakes it in hardware; <code>CGVirtualDisplay</code> fakes it in <b>software</b>.
+  Once the fake display exists, capturing it and streaming it produces a genuine extended second monitor.</p>
+
+  <h3>3.3 Constraints that shape the whole design</h3>
+  <ul>
+    <li><b>Run loop affinity:</b> ScreenCaptureKit, AppKit (tray UI), and the virtual-display callbacks want a
+    thread with a Core Foundation run loop, i.e. the <b>main thread</b>. WebRTC/async must live on separate
+    (tokio) threads and communicate via channels.</li>
+    <li><b>Zero-copy path:</b> ScreenCaptureKit outputs <code>CVPixelBuffer</code>; VideoToolbox consumes
+    <code>CVPixelBuffer</code>. Keeping frames on the GPU from capture → encode avoids expensive CPU copies.</li>
+    <li><b>Browser compatibility:</b> because v1's client is a browser, the encoder must emit a browser-decodable
+    codec/profile. <b>H.264 (Constrained Baseline / Main, Annex-B)</b> is the safe universal choice; HEVC is an
+    optimization for capable clients.</li>
+    <li><b>LAN-only:</b> WebRTC ICE only needs <b>host candidates</b>; no STUN/TURN. Simplifies signaling enormously.</li>
+  </ul>
+</section>
+
+<!-- ============================ 4 ============================ -->
+<section>
+  <h1>4. High-Level Architecture</h1>
+
+  <h3>4.1 System context</h3>
+<figure class="diagram">
+<svg class="ad" viewBox="0 0 880 634" role="img" aria-label="Annex system architecture: macOS host creates a virtual display, captures and encodes it, and streams it over the LAN to a client that renders it full-screen.">
+  <defs>
+    <marker id="ad-ah" viewBox="0 0 10 10" refX="9.2" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#6b7684"/></marker>
+    <marker id="ad-ahr" viewBox="0 0 10 10" refX="9.2" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#c0392b"/></marker>
+    <marker id="ad-ahm" viewBox="0 0 10 10" refX="9.2" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#98a3b1"/></marker>
+  </defs>
+
+  <!-- ===== macOS host ===== -->
+  <rect class="frame" x="10" y="10" width="860" height="386" rx="10"/>
+  <text class="hdr" x="28" y="36">macOS HOST (the Mac) &#183; one Rust binary</text>
+
+  <!-- row A -->
+  <rect class="box priv" x="32" y="58" width="175" height="76" rx="6"/>
+  <text class="ttl red" x="119" y="86" text-anchor="middle">virtual-display</text>
+  <text class="mono"    x="119" y="105" text-anchor="middle">CGVirtualDisplay</text>
+  <text class="tag2"    x="119" y="124" text-anchor="middle">PRIVATE API</text>
+
+  <line class="red" x1="207" y1="96" x2="277" y2="96" marker-end="url(#ad-ahr)"/>
+  <text class="flow s" x="242" y="88"  text-anchor="middle">creates</text>
+  <text class="flow s" x="242" y="114" text-anchor="middle">displayID</text>
+
+  <rect class="box screen" x="277" y="58" width="170" height="76" rx="6"/>
+  <text class="ttl"    x="362" y="86"  text-anchor="middle">VIRTUAL SCREEN</text>
+  <text class="note"   x="362" y="105" text-anchor="middle">macOS renders windows here</text>
+  <text class="note i" x="362" y="123" text-anchor="middle">= the second monitor</text>
+
+  <line class="soft" x1="600" y1="96" x2="455" y2="96" marker-end="url(#ad-ahm)"/>
+  <text class="flow s" x="527" y="88" text-anchor="middle">drag any window onto it</text>
+
+  <rect class="box" x="672" y="58" width="178" height="76" rx="6"/>
+  <text class="ttl"  x="761" y="84"  text-anchor="middle">apps/host + core</text>
+  <text class="note" x="761" y="104" text-anchor="middle">tray UI &#183; QR &#183; config</text>
+  <text class="note" x="761" y="122" text-anchor="middle">owns the main run loop</text>
+
+  <!-- screen -> capture -->
+  <polyline points="362,134 362,162 120,162 120,190" marker-end="url(#ad-ah)"/>
+  <text class="flow s" x="241" y="155" text-anchor="middle">SCStream filtered to displayID</text>
+
+  <!-- row B: the pipeline -->
+  <rect class="box" x="32" y="190" width="175" height="76" rx="6"/>
+  <text class="ttl"  x="119" y="218" text-anchor="middle">capture</text>
+  <text class="sub"  x="119" y="237" text-anchor="middle">ScreenCaptureKit</text>
+  <text class="note" x="119" y="255" text-anchor="middle">SCK dispatch queue</text>
+
+  <line x1="207" y1="228" x2="267" y2="228" marker-end="url(#ad-ah)"/>
+  <text class="flow s" x="237" y="181" text-anchor="middle">CVPixelBuffer &#183; NV12</text>
+  <text class="flow s" x="237" y="252" text-anchor="middle">zero-copy</text>
+
+  <rect class="box" x="267" y="190" width="175" height="76" rx="6"/>
+  <text class="ttl"  x="354" y="218" text-anchor="middle">encoder</text>
+  <text class="sub"  x="354" y="237" text-anchor="middle">VideoToolbox (HW)</text>
+  <text class="note" x="354" y="255" text-anchor="middle">H.264 Annex-B &#183; realtime</text>
+
+  <line x1="442" y1="228" x2="490" y2="228" marker-end="url(#ad-ah)"/>
+  <text class="flow s" x="466" y="181" text-anchor="middle">H.264 NAL units</text>
+  <text class="flow s" x="466" y="252" text-anchor="middle">mpsc</text>
+
+  <rect class="box" x="490" y="190" width="215" height="76" rx="6"/>
+  <text class="ttl"  x="597" y="218" text-anchor="middle">transport</text>
+  <text class="sub"  x="597" y="237" text-anchor="middle">webrtc-rs &#183; axum</text>
+  <text class="note" x="597" y="255" text-anchor="middle">HTTP + WebSocket signaling</text>
+
+  <!-- row C: phase-2 input crate -->
+  <polyline class="soft" points="510,266 510,341 227,341" marker-end="url(#ad-ahm)"/>
+  <text class="flow s" x="370" y="333" text-anchor="middle">InputEvent &#183; mpsc</text>
+
+  <rect class="box p2" x="32" y="306" width="195" height="70" rx="6"/>
+  <text class="ttl"  x="129" y="330" text-anchor="middle">input &#183; phase 2</text>
+  <text class="sub"  x="129" y="349" text-anchor="middle">CGEvent injection</text>
+  <text class="note" x="129" y="366" text-anchor="middle">targets the virtual display</text>
+
+  <!-- legend -->
+  <rect class="key" x="650" y="306" width="200" height="70" rx="5"/>
+  <text class="note" x="662" y="324" style="font-weight:700;letter-spacing:.8px">LEGEND</text>
+  <rect class="box priv" x="662" y="332" width="18" height="11" rx="2"/>
+  <text class="note" x="688" y="342">private Apple API</text>
+  <rect class="box p2" x="662" y="352" width="18" height="11" rx="2"/>
+  <text class="note" x="688" y="362">phase 2, not in v1</text>
+
+  <!-- ===== network ===== -->
+  <rect class="band" x="10" y="404" width="860" height="88" rx="8"/>
+  <text class="hdr"  x="30" y="442">Wi-Fi / LAN</text>
+  <text class="note" x="30" y="461">same network &#183; no cables</text>
+
+  <polyline points="560,266 560,470 295,470 295,502" marker-end="url(#ad-ah)"/>
+  <text class="flow" x="427" y="462" text-anchor="middle">H.264 / RTP over DTLS-SRTP</text>
+
+  <polyline class="soft" points="755,502 755,444 620,444 620,266" marker-end="url(#ad-ahm)"/>
+  <text class="flow" x="687" y="436" text-anchor="middle">input over DataChannel</text>
+
+  <!-- ===== client ===== -->
+  <rect class="frame" x="140" y="502" width="730" height="118" rx="10"/>
+  <text class="hdr" x="160" y="526">CLIENT (the laptop that becomes the second monitor)</text>
+
+  <rect class="box" x="160" y="538" width="270" height="70" rx="6"/>
+  <text class="ttl"  x="295" y="561" text-anchor="middle" style="font-size:14px">v1 &#183; BROWSER</text>
+  <text class="mono" x="295" y="579" text-anchor="middle">opens http://&lt;mac-ip&gt;:8787</text>
+  <text class="note" x="295" y="597" text-anchor="middle">WebRTC decode &#8594; &lt;video&gt; full-screen</text>
+
+  <rect class="box p2" x="450" y="538" width="190" height="70" rx="6"/>
+  <text class="ttl"  x="545" y="561" text-anchor="middle" style="font-size:14px">v2 &#183; NATIVE (Rust)</text>
+  <text class="sub"  x="545" y="579" text-anchor="middle">winit + wgpu</text>
+  <text class="note" x="545" y="597" text-anchor="middle">HW decode &#183; lowest latency</text>
+
+  <rect class="box p2" x="660" y="538" width="190" height="70" rx="6"/>
+  <text class="ttl"  x="755" y="561" text-anchor="middle" style="font-size:14px">INPUT &#183; phase 2</text>
+  <text class="sub"  x="755" y="579" text-anchor="middle">mouse / keyboard</text>
+  <text class="note" x="755" y="597" text-anchor="middle">&#8594; DataChannel</text>
+</svg>
+<figcaption>Figure 1. System context. Red border marks the single crate that touches private Apple APIs;
+dashed boxes are phase 2. The <code>displayID</code> produced by <code>virtual-display</code> is the handle
+<code>capture</code> uses to open its <code>SCStream</code>.</figcaption>
+</figure>
+
+  <h3>4.2 Process model</h3>
+  <ul>
+    <li><b>Host process (macOS):</b> a single native Rust binary, presented as a menu-bar/tray app. It owns the
+    virtual display, the capture+encode pipeline, an embedded HTTP server (serves the client page), a WebSocket
+    signaling endpoint, and one WebRTC peer connection per connected client.</li>
+    <li><b>Client (v1 = browser):</b> a static HTML/JS page (served by the host) that establishes a WebRTC session
+    and paints the incoming video track. Nothing to install on Windows.</li>
+    <li><b>Client (v2 = native Rust):</b> a <code>winit</code>+<code>wgpu</code> window that decodes the stream and
+    renders it, for lower latency and a cleaner full-screen experience. Same signaling protocol.</li>
+  </ul>
+
+  <h3>4.3 End-to-end data flow (steady state)</h3>
+  <ol>
+    <li>macOS composits the windows sitting on the virtual display into its framebuffer.</li>
+    <li><b>ScreenCaptureKit</b> delivers each new frame as a <code>CVPixelBuffer</code> on its dispatch queue.</li>
+    <li>The frame is handed (zero-copy) to <b>VideoToolbox</b>, which emits an H.264 access unit (NAL units).</li>
+    <li>Encoded samples cross an <b>mpsc channel</b> into the tokio world.</li>
+    <li><b>webrtc-rs</b> packetizes them into RTP and sends over the peer connection.</li>
+    <li>The browser's WebRTC stack depacketizes, decodes (hardware), and renders to a <code>&lt;video&gt;</code> element.</li>
+    <li><i>(phase 2)</i> the client captures pointer/key events, sends them on a <b>DataChannel</b>; the host maps
+    coordinates into the virtual display and injects them with <code>CGEvent</code>.</li>
+  </ol>
+</section>
+
+<!-- ============================ 5 ============================ -->
+<section>
+  <h1>5. Component Design</h1>
+  <p>Each component is a Rust crate with a narrow, testable surface. Below: responsibility, public API sketch, and
+  the key implementation notes/gotchas.</p>
+
+  <h3>5.1 <code>virtual-display</code>: the private-API firewall</h3>
+  <p><b>Responsibility:</b> create/destroy a macOS virtual monitor and expose its <code>CGDirectDisplayID</code>.
+  This is the <b>only</b> crate that touches private Apple APIs. It wraps the four Obj-C classes
+  (<code>CGVirtualDisplayDescriptor</code>, <code>…Mode</code>, <code>…Settings</code>, <code>CGVirtualDisplay</code>)
+  via <code>objc2</code> runtime class lookup, and uses RAII so dropping the handle removes the monitor.</p>
+<pre><code>pub struct VirtualDisplayConfig {
+    pub name: String,
+    pub width: u32, pub height: u32, pub refresh_hz: f64,
+    pub hidpi: bool,                 // true → Retina backing store
+    pub size_mm: (f64, f64),         // physical size → controls default DPI
+}
+
+pub struct VirtualDisplay { /* retains the CGVirtualDisplay obj-c object */ }
+
+impl VirtualDisplay {
+    /// Looks up CGVirtualDisplay* classes at runtime, builds descriptor +
+    /// settings, calls initWithDescriptor: / applySettings:.
+    pub fn create(cfg: &VirtualDisplayConfig) -> Result&lt;Self, VdError&gt;;
+    /// CGDirectDisplayID: hand this to the capture crate.
+    pub fn display_id(&self) -> u32;
+}
+impl Drop for VirtualDisplay { /* release obj-c object → monitor disappears */ }</code></pre>
+  <div class="callout warn"><span class="lbl">Gotchas:</span>
+  (1) the <code>CGVirtualDisplay</code> instance <i>is</i> the monitor, so it must be kept alive for the whole session;
+  (2) the descriptor needs a valid <b>dispatch queue</b> (main queue works), since some macOS versions insist on it;
+  (3) the <code>terminationHandler</code> is an Obj-C <b>block</b> (<code>block2</code> crate), can be a no-op in v1;
+  (4) copy the exact header from DeskPad/BetterDummy, do not transcribe field signatures from memory (see App. A).</p>
+
+  <h3>5.2 <code>capture</code>: ScreenCaptureKit source</h3>
+  <p><b>Responsibility:</b> given a <code>display_id</code>, open an <code>SCStream</code> filtered to that display
+  and deliver frames as <code>CVPixelBuffer</code>s to a callback/channel. Handles resolution, pixel format
+  (BGRA or NV12), target FPS, and start/stop.</p>
+<pre><code>pub struct CaptureConfig { pub display_id: u32, pub fps: u32, pub pixel_format: PixFmt }
+pub struct Capturer { /* holds SCStream + delegate */ }
+
+impl Capturer {
+    pub fn start(cfg: CaptureConfig, sink: FrameSink) -> Result&lt;Self, CaptureError&gt;;
+    pub fn stop(self);
+}
+// FrameSink receives (CVPixelBuffer, presentation_timestamp) on SCK's queue.</code></pre>
+  <p><b>Notes:</b> resolve the <code>SCDisplay</code> whose <code>displayID</code> equals our virtual display via
+  <code>SCShareableContent</code>. Request <b>NV12</b> output when feeding VideoToolbox (native encoder input, avoids
+  a color convert). Set <code>minimumFrameInterval</code> for the target FPS. The delegate callback runs on a
+  dispatch queue, so bridge into Rust and forward without blocking.</p>
+
+  <h3>5.3 <code>encoder</code>: VideoToolbox H.264/HEVC</h3>
+  <p><b>Responsibility:</b> compress <code>CVPixelBuffer</code>s into an elementary stream of NAL units suitable for
+  WebRTC. Configured for <b>real-time, low-latency</b> operation.</p>
+<pre><code>pub struct EncoderConfig {
+    pub width:u32, pub height:u32, pub fps:u32,
+    pub bitrate_kbps:u32, pub codec:Codec /* H264 | HEVC */,
+    pub keyframe_interval:u32,
+}
+pub struct Encoder { /* VTCompressionSession */ }
+impl Encoder {
+    pub fn new(cfg:EncoderConfig, out:EncodedSink) -> Result&lt;Self, EncError&gt;;
+    pub fn encode(&self, frame:&CVPixelBuffer, pts:Timestamp);
+    pub fn request_keyframe(&self);   // on new client / packet loss
+    pub fn set_bitrate(&self, kbps:u32);  // react to WebRTC congestion signals
+}</code></pre>
+  <p><b>Critical VideoToolbox settings for low latency:</b> <code>RealTime = true</code>,
+  <code>AllowFrameReordering = false</code> (no B-frames), <code>ProfileLevel = Baseline/Main AutoLevel</code>,
+  <code>MaxKeyFrameInterval</code> tuned, and <b>Annex-B</b> output so WebRTC's H.264 packetizer can consume it.
+  Emit SPS/PPS with each keyframe (in-band) for mid-stream client joins.</p>
+
+  <h3>5.4 <code>transport</code>: WebRTC peer + signaling</h3>
+  <p><b>Responsibility:</b> (a) serve the client page over HTTP; (b) run a WebSocket signaling channel to exchange
+  SDP + ICE; (c) manage a <code>RTCPeerConnection</code> per client with one video track (and a DataChannel for
+  phase-2 input); (d) push encoded samples into the video track.</p>
+<pre><code>// signaling messages (JSON over WebSocket)
+enum Signal { Offer(Sdp), Answer(Sdp), Ice(Candidate), Hello{token:String} }
+
+pub struct Session { pc: RTCPeerConnection, video: Arc&lt;TrackLocalStaticSample&gt; }
+impl Session {
+    pub async fn accept(ws:WebSocket, cfg:&RtcConfig) -> Result&lt;Session, RtcError&gt;;
+    pub async fn write_sample(&self, nal:&[u8], dur:Duration); // feed encoder output
+    pub fn on_input(&self, cb: impl Fn(InputEvent));           // phase-2 DataChannel
+}</code></pre>
+  <p><b>Notes:</b> since it is LAN-only, configure ICE with <b>no STUN/TURN</b>, since host candidates connect directly.
+  Use <code>TrackLocalStaticSample</code> with the H.264 payloader; webrtc-rs handles RTP + NACK + PLI. On a PLI
+  (picture-loss indication) from the client, call <code>encoder.request_keyframe()</code>. Prefer an async HTTP
+  framework (<code>axum</code>) for both the static page and the WebSocket upgrade on one port.</p>
+
+  <h3>5.5 <code>web/client</code>: the browser client (v1)</h3>
+  <p><b>Responsibility:</b> a single static page. Opens a WebSocket to the host, performs the WebRTC handshake,
+  attaches the remote track to a full-screen <code>&lt;video autoplay playsinline&gt;</code>, and (phase 2) forwards
+  pointer/keyboard events. ~150 lines of vanilla JS; no framework needed.</p>
+<pre><code>const pc = new RTCPeerConnection({ iceServers: [] });   // LAN → no STUN/TURN
+pc.ontrack = e =&gt; { videoEl.srcObject = e.streams[0]; };
+const ws = new WebSocket(`ws://${location.host}/signal`);
+// exchange offer/answer + ICE over ws … then video.requestFullscreen()</code></pre>
+
+  <h3>5.6 <code>input</code>: CGEvent injection (phase 2)</h3>
+  <p><b>Responsibility:</b> translate <code>InputEvent</code>s from the client into macOS events targeted at the
+  virtual display's coordinate space, via <code>CGEventCreateMouseEvent</code>/<code>…KeyboardEvent</code> +
+  <code>CGEventPost</code>. Requires the user to grant <b>Accessibility</b> permission. Coordinate mapping must
+  account for the virtual display's origin in the global display arrangement and HiDPI scale factor.</p>
+
+  <h3>5.7 <code>core</code> + <code>apps/host</code>: orchestration &amp; UI</h3>
+  <p><b>core</b> holds shared types (config, errors, the frame/sample structs, protocol enums) and the pipeline
+  wiring. <b>apps/host</b> is the actual binary: it owns the main-thread run loop, builds a tray menu
+  (<code>tray-icon</code>/<code>muda</code>), shows the connect URL + a QR code, starts the tokio runtime, and
+  glues virtual-display → capture → encoder → transport together.</p>
+</section>
+
+<!-- ============================ 6 ============================ -->
+<section>
+  <h1>6. Workspace &amp; Crate Layout</h1>
+<pre>
+annex/
+├─ Cargo.toml                  # [workspace] members
+├─ rust-toolchain.toml         # pin stable toolchain
+├─ crates/
+│  ├─ core/                    # shared types, config, errors, pipeline glue
+│  ├─ virtual-display/         # ← ONLY crate using private CGVirtualDisplay (objc2)
+│  ├─ capture/                 # ScreenCaptureKit  → CVPixelBuffer frames
+│  ├─ encoder/                 # VideoToolbox      → H.264 / HEVC NAL units
+│  ├─ transport/              # webrtc-rs peer + axum HTTP/WebSocket signaling
+│  └─ input/                   # (phase 2) CGEvent injection
+├─ apps/
+│  ├─ host/                    # macOS binary: tray UI, run loop, wires it all
+│  └─ client-native/           # (phase 2) winit + wgpu + webrtc-rs client
+└─ web/
+   └─ client/                  # index.html + client.js  (v1 browser client, served by host)
+</pre>
+  <p><b>Why a workspace of small crates?</b> The private-API blast radius is confined to <code>virtual-display</code>;
+  each crate is independently unit-testable; the media crates (macOS-only) are cleanly separated from the
+  cross-platform <code>transport</code>/<code>core</code>, which the future Windows native client reuses.</p>
+
+  <table>
+    <tr><th>Crate</th><th>Platform</th><th>Touches private API?</th><th>Reused by native client?</th></tr>
+    <tr><td>core</td><td>all</td><td>no</td><td>✅</td></tr>
+    <tr><td>virtual-display</td><td>macOS</td><td><b>yes</b></td><td>no (host only)</td></tr>
+    <tr><td>capture</td><td>macOS</td><td>no</td><td>no (host only)</td></tr>
+    <tr><td>encoder</td><td>macOS</td><td>no</td><td>no (host only)</td></tr>
+    <tr><td>transport</td><td>all</td><td>no</td><td>✅</td></tr>
+    <tr><td>input</td><td>macOS</td><td>no</td><td>no</td></tr>
+  </table>
+</section>
+
+<!-- ============================ 7 ============================ -->
+<section>
+  <h1>7. Concurrency &amp; Threading Model</h1>
+  <p>The trickiest systems detail. macOS frameworks impose <b>thread affinity</b>; Rust async imposes its own. The
+  design keeps a strict separation between the <b>main run-loop world</b> (Apple frameworks) and the
+  <b>tokio world</b> (networking), joined by lock-free channels.</p>
+<pre>
+   MAIN THREAD (CFRunLoop / NSApplication)          SCK DISPATCH QUEUE            TOKIO RUNTIME (N worker threads)
+   ────────────────────────────────────────         ──────────────────           ───────────────────────────────
+   • create VirtualDisplay (main queue)              SCStream delegate:           • axum HTTP server (client page)
+   • build tray UI + QR                              each frame →                 • WebSocket signaling
+   • start Capturer / Encoder                        CVPixelBuffer                • RTCPeerConnection(s)
+   • pump run loop (blocks here)                          │                       • video track.write_sample()
+                                                          ▼                            ▲
+                                            VTCompressionSession.encode                │
+                                                          │  H.264 NAL                 │
+                                                          ▼                            │
+                                            ┌──────────  mpsc::channel  ───────────────┘
+                                            │   (encoded samples: bytes + pts + dur)
+                                            └───────────────────────────────────────────
+   phase-2 input flows the OTHER way:  tokio (DataChannel) ──mpsc──▶ main thread ──▶ CGEvent inject
+</pre>
+  <ul>
+    <li><b>Main thread</b> owns everything AppKit/CoreGraphics/ScreenCaptureKit and runs the run loop.</li>
+    <li><b>ScreenCaptureKit</b> calls the frame delegate on its own dispatch queue; we encode there (or hop to a
+    dedicated encode thread) and push bytes onto an <code>mpsc</code>.</li>
+    <li><b>Tokio</b> runs on background threads (spawned before the run loop takes over the main thread); it drains
+    the channel and writes to the WebRTC track. Networking never blocks capture.</li>
+    <li><b>Back-pressure:</b> a bounded channel; if the network stalls, drop the oldest frame and ask the encoder
+    for a keyframe rather than queueing latency.</li>
+  </ul>
+</section>
+
+<!-- ============================ 8 ============================ -->
+<section>
+  <h1>8. Sequence Diagrams</h1>
+
+  <h3>8.1 Startup &amp; connection handshake</h3>
+<pre>
+ User            Host(main)        Host(tokio: http/ws)      Host(webrtc)         Windows Browser
+  │  launch ──────▶│                                                                   │
+  │               │ create virtual display (displayID)                                 │
+  │  ◀── "monitor appears in System Settings"                                          │
+  │               │ start tokio ─────▶│ bind :PORT, serve page + /signal               │
+  │  ◀── show URL + QR code            │                                               │
+  │                                    │                       open http://ip:PORT ───▶│
+  │                                    │◀────────────────────────── GET / (page) ──────│
+  │                                    │────────── index.html + client.js ────────────▶│
+  │                                    │◀───────────── WebSocket /signal ──────────────│
+  │                                    │  offer(SDP) ─▶│ setRemote / createAnswer       │
+  │                                    │◀── answer(SDP)│ ──────────────────────────────▶│
+  │                                    │  ICE (host-local LAN candidates) ⇄ ICE         │
+  │                                    │               │═══ DTLS/SRTP established ══════│
+  │  start capture+encode ────────────────────────────▶│ video track.write_sample() ══▶│ decode → &lt;video&gt;
+</pre>
+
+  <h3>8.2 Steady-state frame pipeline (per frame, ~16 ms @ 60 fps)</h3>
+<pre>
+ macOS compositor ─▶ SCStream delegate ─▶ VTCompressionSession ─▶ mpsc ─▶ webrtc track ─▶ RTP/UDP ─▶ browser decode ─▶ paint
+   (renders VD)        CVPixelBuffer         H.264 access unit     bytes     packetize      Wi-Fi        HW decode       &lt;video&gt;
+      ~0                 ~1–3 ms               ~3–8 ms             ~0        ~1 ms          ~2–10 ms      ~5–16 ms        n/a
+</pre>
+
+  <h3>8.3 Client disconnect / reconnect</h3>
+<pre>
+ Browser closes ─▶ WebRTC ICE "disconnected" ─▶ host drops Session ─▶ (if 0 clients) pause capture to save CPU
+ New client opens ─▶ new Session ─▶ host resumes capture ─▶ encoder.request_keyframe() ─▶ instant first frame
+</pre>
+</section>
+
+<!-- ============================ 9 ============================ -->
+<section>
+  <h1>9. Key Data Structures &amp; APIs</h1>
+  <p>The shared vocabulary lives in <code>core</code>. Everything else depends on these.</p>
+<pre><code>// ---- core::config ----
+pub struct HostConfig {
+    pub display: VirtualDisplayConfig,   // §5.1
+    pub encoder: EncoderConfig,          // §5.3
+    pub bind_addr: SocketAddr,           // e.g. 0.0.0.0:8787
+    pub auth_token: Option&lt;String&gt;,      // simple shared secret (§11)
+    pub allow_input: bool,               // phase-2 gate
+}
+
+// ---- core::frame ----
+pub struct EncodedSample { pub data: Bytes, pub pts: i64, pub dur_us: u32, pub keyframe: bool }
+
+// ---- core::protocol (client ⇄ host over WebSocket, JSON) ----
+pub enum ClientMsg { Hello{ token: Option&lt;String&gt; }, Answer(String), Ice(IceCandidate),
+                     Input(InputEvent) /* phase 2, or via DataChannel */ }
+pub enum HostMsg   { Offer(String), Ice(IceCandidate), Config{ w:u32, h:u32, fps:u32 }, Error(String) }
+
+// ---- core::input (phase 2) ----
+pub enum InputEvent {
+    MouseMove{ x:f64, y:f64 },  MouseButton{ btn:u8, down:bool },
+    Scroll{ dx:f64, dy:f64 },   Key{ code:u32, down:bool, mods:u32 },
+}
+
+// ---- pipeline handle ----
+pub struct Pipeline { /* owns VirtualDisplay + Capturer + Encoder + transport tx */ }
+impl Pipeline {
+    pub fn start(cfg: HostConfig) -&gt; Result&lt;Pipeline, Error&gt;;
+    pub fn connect_url(&self) -&gt; String;      // for the tray UI / QR
+    pub fn shutdown(self);                     // tears down cleanly (removes VD)
+}</code></pre>
+</section>
+
+<!-- ============================ 10 ============================ -->
+<section>
+  <h1>10. Performance &amp; Latency Budget</h1>
+  <p>At 60 fps each frame owns a <b>16.6 ms</b> slot; at 30 fps, 33 ms. "Glass-to-glass" latency (a change on the
+  Mac appearing on the Windows screen) is the sum of pipeline stages plus buffering. Realistic targets on a decent
+  5 GHz Wi-Fi link:</p>
+  <table>
+    <tr><th>Stage</th><th>Typical</th><th>Levers to reduce it</th></tr>
+    <tr><td>Capture (ScreenCaptureKit)</td><td>1–3 ms</td><td>NV12 output, cap FPS, dirty-region hints</td></tr>
+    <tr><td>Encode (VideoToolbox HW)</td><td>3–8 ms</td><td>RealTime, no B-frames, no reordering, sane bitrate</td></tr>
+    <tr><td>Packetize + queue</td><td>&lt;1 ms + queue</td><td>bounded channel, drop-oldest back-pressure</td></tr>
+    <tr><td>Network (Wi-Fi LAN)</td><td>2–10 ms</td><td>5 GHz / Wi-Fi 6, low channel congestion, wired > wireless</td></tr>
+    <tr><td>Jitter buffer + decode (browser)</td><td>5–16 ms</td><td>low-latency playback, small jitter buffer</td></tr>
+    <tr><td><b>Total (glass-to-glass)</b></td><td><b>~30–60 ms</b></td><td>Ethernet/USB-tether pushes toward the low end</td></tr>
+  </table>
+  <div class="callout"><span class="lbl">Bandwidth:</span> 1080p60 at H.264 real-time is roughly <b>8–20 Mbit/s</b>
+  depending on motion. Static desktops compress to almost nothing; video/scrolling spikes it. WebRTC's congestion
+  control adapts bitrate automatically, so wire that signal to <code>encoder.set_bitrate()</code>.</p>
+  <ul>
+    <li><b>Idle efficiency:</b> ScreenCaptureKit only emits frames on change, so a still desktop costs ~0.</li>
+    <li><b>Motion smoothness</b> matters more than resolution for perceived quality; prefer 60 fps at a tuned bitrate
+    over 4K at low fps.</li>
+    <li><b>HEVC</b> cuts bitrate ~30–40% but only for clients that can decode it, so keep H.264 as the fallback.</li>
+  </ul>
+</section>
+
+<!-- ============================ 11 ============================ -->
+<section>
+  <h1>11. Security, Permissions &amp; Privacy</h1>
+  <ul>
+    <li><b>Screen Recording permission</b> (TCC): required by ScreenCaptureKit. macOS prompts on first capture;
+    the app appears under <b>System Settings → Privacy &amp; Security → Screen Recording</b>.</li>
+    <li><b>Accessibility permission</b>: required only for phase-2 input injection (<code>CGEvent</code>).</li>
+    <li><b>Network exposure:</b> the host opens an HTTP/WebSocket port on the LAN. Anyone on the same network could
+    connect. Mitigate with a <b>shared-secret token</b> (<code>Hello{token}</code>) shown in the tray UI and encoded
+    in the QR/URL; reject sessions without it.</li>
+    <li><b>Transport encryption:</b> WebRTC media is <b>always encrypted</b> (DTLS-SRTP). The <i>signaling</i> WebSocket
+    is plain <code>ws://</code> on the LAN by default; optionally upgrade to <code>wss://</code> with a self-signed
+    cert if the threat model warrants.</li>
+    <li><b>No data leaves the LAN:</b> no STUN/TURN, no cloud, a strong privacy story vs. commercial tools.</li>
+    <li><b>Code signing / notarization:</b> sign the app (Developer ID) so Gatekeeper allows it; it cannot be
+    notarized for the Mac App Store because of the private API, but Developer-ID distribution is fine.</li>
+  </ul>
+</section>
+
+<!-- ============================ 12 ============================ -->
+<section>
+  <h1>12. Dependencies (Crates) &amp; Build</h1>
+  <div class="callout warn"><span class="lbl">Version note:</span> the Apple-framework binding ecosystem moves fast.
+  Treat the versions below as "known-good families," and run <code>cargo add</code> to pin the current release at
+  build time. Prefer <code>objc2</code>'s official framework crates where they exist.</p>
+  <table>
+    <tr><th>Concern</th><th>Recommended crate(s)</th><th>Role</th></tr>
+    <tr><td>Obj-C runtime / Foundation</td><td><code>objc2</code>, <code>objc2-foundation</code>, <code>objc2-app-kit</code></td>
+        <td>Call Apple frameworks; runtime class lookup for the private <code>CGVirtualDisplay</code>.</td></tr>
+    <tr><td>Obj-C blocks / dispatch</td><td><code>block2</code>, <code>dispatch2</code> (or libdispatch FFI)</td>
+        <td>terminationHandler block; dispatch queues for descriptor + SCStream.</td></tr>
+    <tr><td>Capture + media types</td><td><code>objc2-screen-capture-kit</code>, <code>objc2-core-media</code>, <code>objc2-core-video</code>, or <code>cidre</code></td>
+        <td>ScreenCaptureKit + CVPixelBuffer/CMSampleBuffer. <code>cidre</code> also wraps VideoToolbox richly.</td></tr>
+    <tr><td>Video encode</td><td><code>cidre</code> (VideoToolbox) or raw <code>extern "C"</code> FFI</td>
+        <td>VTCompressionSession is a C API; <code>cidre</code> gives the smoothest Rust ergonomics.</td></tr>
+    <tr><td>WebRTC</td><td><code>webrtc</code> (webrtc-rs)</td><td>Pure-Rust peer connection, tracks, DataChannels, RTP.</td></tr>
+    <tr><td>Async + HTTP/WS signaling</td><td><code>tokio</code>, <code>axum</code>, <code>tokio-tungstenite</code></td>
+        <td>Runtime, static page server, WebSocket signaling on one port.</td></tr>
+    <tr><td>Serialization</td><td><code>serde</code>, <code>serde_json</code></td><td>Signaling + config messages.</td></tr>
+    <tr><td>Tray UI + QR</td><td><code>tray-icon</code>, <code>muda</code>, <code>qrcode</code></td><td>Menu-bar app, connect URL, QR code.</td></tr>
+    <tr><td>Native client (phase 2)</td><td><code>winit</code>, <code>wgpu</code>, <code>webrtc</code>, decoder via <code>windows</code>/<code>ffmpeg-next</code></td>
+        <td>Windows full-screen renderer + hardware decode.</td></tr>
+  </table>
+
+  <h3>12.1 Toolchain &amp; build</h3>
+<pre><code># prerequisites: Xcode command-line tools (for the macOS SDK), stable Rust
+rustup toolchain install stable
+# build the host (macOS)
+cargo build -p host --release
+# run (grants Screen Recording prompt on first launch)
+cargo run  -p host
+</code></pre>
+  <p><b>Linking the private API:</b> because we resolve <code>CGVirtualDisplay</code> classes with
+  <code>AnyClass::get("…")</code> at runtime, there is <i>no</i> link-time symbol to satisfy, since CoreGraphics is already
+  loaded, so no special linker flags are needed. Screen Recording/Accessibility entitlements are handled via the
+  app bundle's <code>Info.plist</code> usage strings and TCC prompts.</p>
+</section>
+
+<!-- ============================ 13 ============================ -->
+<section>
+  <h1>13. Risks &amp; Mitigations</h1>
+  <table>
+    <tr><th>Risk</th><th>Impact</th><th>Mitigation</th></tr>
+    <tr><td><b>Private API breaks on a macOS update</b></td><td>Virtual display fails to create</td>
+        <td>Isolated in one crate; mirror DeskPad/BetterDummy (actively maintained); pin/test per macOS version; fall back to an $8 HDMI dummy-plug path (100% public APIs).</td></tr>
+    <tr><td><b>objc2 / cidre API churn</b></td><td>Build breaks on upgrade</td><td>Pin exact versions in <code>Cargo.lock</code>; upgrade deliberately.</td></tr>
+    <tr><td><b>VideoToolbox FFI complexity</b></td><td>Slow encoder milestone</td><td>Use <code>cidre</code>'s VT wrappers instead of hand-rolled FFI; validate with a local decode loop first.</td></tr>
+    <tr><td><b>Wi-Fi latency/jitter</b></td><td>Laggy feel</td><td>5 GHz/Wi-Fi 6; drop-oldest back-pressure; offer wired/USB-tether path; adaptive bitrate.</td></tr>
+    <tr><td><b>Browser codec quirks</b></td><td>Black video on some clients</td><td>Default to H.264 Constrained Baseline, Annex-B, in-band SPS/PPS; HEVC only when negotiated.</td></tr>
+    <tr><td><b>Run-loop / thread-affinity bugs</b></td><td>Crashes, no frames</td><td>Strict main-thread rule for Apple APIs; channels to tokio; never call AppKit off-main.</td></tr>
+    <tr><td><b>Ghost displays after crash</b></td><td>Leftover virtual monitors</td><td>RAII <code>Drop</code> + a termination handler; on launch, reclaim/cleanup stale displays.</td></tr>
+    <tr><td><b>Input coordinate mapping (phase 2)</b></td><td>Cursor offset/misclick</td><td>Map through the display's global origin + HiDPI scale; test across arrangements.</td></tr>
+  </table>
+</section>
+
+<!-- ============================ 14 ============================ -->
+<section>
+  <h1>14. Roadmap &amp; Milestones</h1>
+  <p>Sequenced to <b>de-risk early</b> and produce a visible demo at each step. Estimates assume one developer
+  comfortable with Rust, learning the macOS specifics.</p>
+  <table>
+    <tr><th>#</th><th>Milestone</th><th>Deliverable / demo</th><th>Rough effort</th></tr>
+    <tr><td><b>M0</b></td><td>Virtual-display spike</td><td>Run a binary → a fake monitor appears in System Settings; drops cleanly on exit.</td><td>1–3 days</td></tr>
+    <tr><td><b>M1</b></td><td>Capture to disk</td><td>Capture the virtual display via ScreenCaptureKit; save frames/PNG to prove the source works.</td><td>2–4 days</td></tr>
+    <tr><td><b>M2</b></td><td>Encode + local verify</td><td>VideoToolbox → H.264; decode locally (or write .h264/.mp4) to confirm a valid low-latency stream.</td><td>3–5 days</td></tr>
+    <tr><td><b>M3</b></td><td>WebRTC to browser (mirror)</td><td>Stream the <i>main</i> display to a browser full-screen; the whole network path proven end-to-end.</td><td>4–7 days</td></tr>
+    <tr><td><b>M4</b></td><td><b>Extended display E2E</b></td><td>Point capture at the virtual display → drag a window over → it appears on Windows. <b>v1 done.</b></td><td>2–4 days</td></tr>
+    <tr><td><b>M5</b></td><td>Interactive input</td><td>DataChannel input → <code>CGEvent</code> injection; mouse/keyboard work on the second screen.</td><td>~1 week</td></tr>
+    <tr><td><b>M6</b></td><td>Polish</td><td>Tray UI, QR/URL, auth token, resolution picker, auto-reconnect, multi-client, HEVC.</td><td>ongoing</td></tr>
+    <tr><td><b>M7</b></td><td>Native Rust client</td><td><code>winit</code>+<code>wgpu</code> Windows app with HW decode for lowest latency.</td><td>1–2 weeks</td></tr>
+  </table>
+  <div class="callout ok"><span class="lbl">Fastest path to "it works":</span> M0 → M1 → M2 → M3 → M4. Note that
+  M3 uses the <i>real</i> main display so you can prove the streaming half <b>before</b> depending on the private
+  virtual-display API, so the two halves are validated independently, then joined at M4.</p>
+</section>
+
+<!-- ============================ 15 ============================ -->
+<section>
+  <h1>15. Testing &amp; Verification Strategy</h1>
+  <ul>
+    <li><b>Unit tests</b> for pure logic: config parsing, signaling message (de)serialization, coordinate mapping
+    math, back-pressure/queue behavior.</li>
+    <li><b>Encoder round-trip test:</b> feed a synthetic <code>CVPixelBuffer</code> (known pattern) → encode →
+    decode → assert similarity (PSNR threshold). Catches format/Annex-B/SPS-PPS regressions.</li>
+    <li><b>Capture smoke test:</b> create a virtual display, render a known color, capture one frame, assert pixels.</li>
+    <li><b>Integration (headless):</b> host + a headless WebRTC client (webrtc-rs on the test side) negotiate and
+    receive N frames, which verifies the full signaling + media path in CI without a browser.</li>
+    <li><b>Manual latency measurement:</b> display a millisecond timer on the Mac's virtual screen, photograph both
+    screens together, subtract: the classic glass-to-glass method.</li>
+    <li><b>CI:</b> build + unit/integration tests on a macOS runner; the private-API creation test is gated to run
+    only on self-hosted/interactive machines where TCC prompts can be pre-authorized.</li>
+    <li><b>Compatibility matrix:</b> test the browser client on Chrome, Edge, and Firefox on Windows; record the
+    working codec/profile per browser.</li>
+  </ul>
+</section>
+
+<!-- ============================ 16 ============================ -->
+<section>
+  <h1>Appendix A: Reverse-engineered <code>CGVirtualDisplay</code> interface</h1>
+  <div class="callout warn"><span class="lbl">Do not transcribe from memory.</span> Copy the current header from a
+  maintained reference (DeskPad or BetterDummy) and cross-check the two, since field signatures have drifted across macOS
+  versions. This appendix shows the <i>shape</i> so you recognize it, not an authoritative header.</p>
+<pre><code>// Private classes living inside CoreGraphics.framework (not in the SDK).
+@interface CGVirtualDisplayMode : NSObject
+- (instancetype)initWithWidth:(uint32_t)w height:(uint32_t)h refreshRate:(double)r;
+@property(readonly) uint32_t width, height;  @property(readonly) double refreshRate;
+@end
+
+@interface CGVirtualDisplayDescriptor : NSObject
+@property(retain) dispatch_queue_t queue;
+@property(copy)   NSString *name;
+@property uint32_t maxPixelsWide, maxPixelsHigh;
+@property CGSize   sizeInMillimeters;                 // physical size → DPI
+@property uint32_t vendorID, productID, serialNum;
+@property(copy)   void (^terminationHandler)(id, id); // Obj-C block
+@end
+
+@interface CGVirtualDisplaySettings : NSObject
+@property(retain) NSArray&lt;CGVirtualDisplayMode *&gt; *modes;
+@property uint32_t hiDPI;        // 1 = Retina backing
+@property uint32_t rotation;
+@end
+
+@interface CGVirtualDisplay : NSObject
+- (instancetype)initWithDescriptor:(CGVirtualDisplayDescriptor *)d;
+- (BOOL)applySettings:(CGVirtualDisplaySettings *)s;
+@property(readonly) CGDirectDisplayID displayID;      // ← feed to ScreenCaptureKit
+@end</code></pre>
+  <p><b>Creation recipe (from the Rust <code>virtual-display</code> crate, conceptually):</b> look up each class with
+  <code>AnyClass::get(c"CGVirtualDisplay")</code> → build descriptor (name, dimensions, size_mm, IDs, main queue) →
+  <code>alloc/initWithDescriptor:</code> → build settings (one mode, hiDPI) → <code>applySettings:</code> → read
+  <code>displayID</code>. Retain the object for the session; drop it to remove the monitor.</p>
+</section>
+
+<!-- ============================ 17 ============================ -->
+<section>
+  <h1>Appendix B: References</h1>
+  <h4>Reference implementations to read / adapt</h4>
+  <ul>
+    <li><b>DeskPad</b>: Swift virtual monitor, MIT. Gold-standard for the <code>CGVirtualDisplay</code> creation code. <span class="small">github.com/Stengo/DeskPad</span></li>
+    <li><b>BetterDummy</b>: Swift virtual display, MIT. Second independent reference for the private API. <span class="small">github.com/waydabber/BetterDummy</span></li>
+    <li><b>BetterDisplay</b>: the productized, feature-rich descendant. <span class="small">github.com/waydabber/BetterDisplay</span></li>
+    <li><b>Deskreen</b>: Electron/WebRTC browser-as-second-screen; the streaming/architecture model. <span class="small">github.com/pavlobu/deskreen</span></li>
+  </ul>
+  <h4>Rust libraries</h4>
+  <ul>
+    <li><b>objc2</b> family: Apple framework bindings + runtime. <span class="small">github.com/madsmtm/objc2</span></li>
+    <li><b>cidre</b>: comprehensive Rust bindings for ScreenCaptureKit, CoreMedia, VideoToolbox. <span class="small">github.com/yury/cidre</span></li>
+    <li><b>webrtc-rs</b>: pure-Rust WebRTC. <span class="small">github.com/webrtc-rs/webrtc</span></li>
+    <li><b>tokio / axum</b>, <b>winit / wgpu</b>, <b>tray-icon / muda</b>.</li>
+  </ul>
+  <h4>Apple documentation</h4>
+  <ul>
+    <li>ScreenCaptureKit: developer.apple.com/documentation/screencapturekit</li>
+    <li>VideoToolbox (VTCompressionSession): developer.apple.com/documentation/videotoolbox</li>
+    <li>Quartz Display Services / CGEvent: developer.apple.com/documentation/coregraphics</li>
+  </ul>
+</section>
+
+<!-- ============================ 18 ============================ -->
+<section>
+  <h1>Appendix C: Glossary</h1>
+  <table>
+    <tr><th>Term</th><th>Meaning</th></tr>
+    <tr><td><b>CGVirtualDisplay</b></td><td>Private CoreGraphics class that creates a software "monitor" macOS treats as real.</td></tr>
+    <tr><td><b>CGDirectDisplayID</b></td><td>Numeric identifier macOS assigns each display; the handle passed between capture and injection.</td></tr>
+    <tr><td><b>ScreenCaptureKit (SCK)</b></td><td>Apple's modern, GPU-accelerated screen-capture framework (macOS 12.3+).</td></tr>
+    <tr><td><b>CVPixelBuffer</b></td><td>A GPU-friendly image buffer; the frame format passed capture → encoder.</td></tr>
+    <tr><td><b>VideoToolbox (VT)</b></td><td>Apple's hardware video encode/decode framework.</td></tr>
+    <tr><td><b>NAL unit / Annex-B</b></td><td>H.264 packaging; Annex-B is the start-code stream WebRTC's payloader expects.</td></tr>
+    <tr><td><b>WebRTC</b></td><td>Real-time media/data transport with built-in encryption, NACK, and congestion control.</td></tr>
+    <tr><td><b>SDP / ICE</b></td><td>WebRTC's session description and connectivity-establishment protocols (exchanged via signaling).</td></tr>
+    <tr><td><b>DataChannel</b></td><td>WebRTC's arbitrary-data channel; carries phase-2 input events.</td></tr>
+    <tr><td><b>Signaling</b></td><td>The out-of-band exchange (our WebSocket) that bootstraps a WebRTC connection.</td></tr>
+    <tr><td><b>TCC</b></td><td>macOS "Transparency, Consent &amp; Control": the permission system behind Screen Recording/Accessibility prompts.</td></tr>
+    <tr><td><b>RAII / Drop</b></td><td>Rust pattern where releasing a value frees its resource; here, removing the virtual display.</td></tr>
+    <tr><td><b>Glass-to-glass latency</b></td><td>Time from a change on the Mac to it appearing on the Windows screen.</td></tr>
+    <tr><td><b>HiDPI</b></td><td>Retina-style rendering where the backing store has 2× the logical pixels.</td></tr>
+  </table>
+  <hr>
+  <p class="small">Annex: Architecture &amp; Design v1.0 · Prepared 24 July 2026 · This document describes a
+  design intended for personal/self-hosted use. The virtual-display technique relies on private Apple APIs and is not
+  eligible for Mac App Store distribution.</p>
+</section>
+
+</body>
+</html>
