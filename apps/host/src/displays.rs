@@ -20,11 +20,40 @@ unsafe extern "C" {
     fn CGDisplayPixelsHigh(display: CGDirectDisplayID) -> usize;
     fn CGDisplayIsBuiltin(display: CGDirectDisplayID) -> i32;
     fn CGDisplayVendorNumber(display: CGDirectDisplayID) -> u32;
+
+    // The pair that settles whether a HiDPI backing store exists.
+    // `GetWidth` is points, `GetPixelWidth` is real pixels. On a Retina display
+    // the second is twice the first. Nothing else reports this distinction.
+    fn CGDisplayCopyDisplayMode(display: CGDirectDisplayID) -> *mut c_void;
+    fn CGDisplayModeGetWidth(mode: *mut c_void) -> usize;
+    fn CGDisplayModeGetHeight(mode: *mut c_void) -> usize;
+    fn CGDisplayModeGetPixelWidth(mode: *mut c_void) -> usize;
+    fn CGDisplayModeGetPixelHeight(mode: *mut c_void) -> usize;
+    fn CGDisplayModeRelease(mode: *mut c_void);
 }
 
-// Silences an unused warning until something needs the raw handle type.
-#[allow(dead_code)]
-type Unused = *mut c_void;
+/// Points and backing pixels for a display's current mode, as
+/// `(point_w, point_h, pixel_w, pixel_h)`.
+///
+/// When the pixel figures are double the point figures, macOS is rendering a
+/// Retina backing store and a capture at 1x throws away three quarters of the
+/// pixels it drew.
+pub fn mode_geometry(id: CGDirectDisplayID) -> Option<(usize, usize, usize, usize)> {
+    unsafe {
+        let mode = CGDisplayCopyDisplayMode(id);
+        if mode.is_null() {
+            return None;
+        }
+        let g = (
+            CGDisplayModeGetWidth(mode),
+            CGDisplayModeGetHeight(mode),
+            CGDisplayModeGetPixelWidth(mode),
+            CGDisplayModeGetPixelHeight(mode),
+        );
+        CGDisplayModeRelease(mode);
+        Some(g)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DisplayInfo {

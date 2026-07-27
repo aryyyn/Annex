@@ -15,10 +15,11 @@ path = "src/main.rs"
 [dependencies]
 annex-core            = { workspace = true }
 annex-virtual-display = { workspace = true }
-annex-capture         = { workspace = true }
+annex-capture.workspace = true
 annex-encoder         = { workspace = true }
 annex-transport       = { workspace = true }
 annex-input           = { workspace = true }
+png = "0.18.1"
 
 # M6 wires the tray UI in.
 # tokio              = { workspace = true }

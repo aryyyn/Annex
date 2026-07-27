@@ -42,7 +42,7 @@ objc2-core-video         = "0.3"
 objc2-core-media         = "0.3"
 objc2-screen-capture-kit = "0.3"
 block2                   = "0.6"
-dispatch2                = "0.2"
+dispatch2                = "0.3"
 webrtc                   = "0.11"
 tokio                    = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 axum                     = "0.7"

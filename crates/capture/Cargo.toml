@@ -8,14 +8,36 @@ license.workspace      = true
 repository.workspace   = true
 authors.workspace      = true
 
+# Wired in at M1. The objc2 framework crates gate every type behind a feature,
+# so each one below is here because something in lib.rs needs it. Leaving a
+# feature off does not produce a helpful error, just a missing type, which is
+# worth knowing before you go hunting.
 [dependencies]
 annex-core = { workspace = true }
+objc2      = { workspace = true }
+block2     = { workspace = true }
 
-# M1 wires these in.
-# [target.'cfg(target_os = "macos")'.dependencies]
-# objc2                    = { workspace = true }
-# objc2-foundation         = { workspace = true }
-# objc2-screen-capture-kit = { workspace = true }
-# objc2-core-video         = { workspace = true }
-# objc2-core-media         = { workspace = true }
-# dispatch2                = { workspace = true }
+# DispatchQueue, for the queue ScreenCaptureKit delivers frames on.
+dispatch2 = { workspace = true, features = ["objc2"] }
+
+objc2-foundation = { workspace = true, features = ["NSArray", "NSError", "NSString"] }
+
+# CMSampleBuffer wraps every delivered frame; CMTime sets the frame interval.
+objc2-core-media = { workspace = true, features = ["CMSampleBuffer", "CMTime", "CMFormatDescription"] }
+
+# CVPixelBuffer is the frame itself, and the lock/unlock pair is how we read it.
+objc2-core-video = { workspace = true, features = ["CVPixelBuffer", "CVBuffer", "CVImageBuffer", "CVReturn"] }
+
+# CGPreflightScreenCaptureAccess and CGRequestScreenCaptureAccess: the TCC gate.
+objc2-core-graphics = { version = "0.3.2", features = ["CGWindow", "CGDirectDisplay", "CGError"] }
+
+objc2-screen-capture-kit = { workspace = true, features = [
+    "SCStream",
+    "SCShareableContent",
+    "SCError",
+    "block2",
+    "dispatch2",
+    "objc2-core-media",
+    "objc2-core-graphics",
+] }
+objc2-core-foundation.workspace = true

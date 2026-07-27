@@ -671,6 +671,16 @@ impl Pipeline {
     <tr><td>Jitter buffer + decode (browser)</td><td>5–16 ms</td><td>low-latency playback, small jitter buffer</td></tr>
     <tr><td><b>Total (glass-to-glass)</b></td><td><b>~30–60 ms</b></td><td>Ethernet/USB-tether pushes toward the low end</td></tr>
   </table>
+  <div class="callout warn"><span class="lbl">Measured 27 July 2026, macOS 26.5: the virtual display is 1x, not Retina.</span>
+  <code>CGDisplayModeGetPixelWidth</code> equals <code>CGDisplayModeGetWidth</code> for the virtual display, so there is
+  <b>no HiDPI backing store</b>. That holds with <code>hiDPI</code> set to 0 or 1, and with a mode of either 1920x1080 or
+  3840x2160: all four combinations report <b>1920x1080 points and 1920x1080 backing pixels</b>. Two consequences.
+  <b>Capture at scale 1.</b> Requesting a 2x buffer costs four times the pixels and bandwidth and returns a bicubic
+  upscale, differing from an upscaled 1x frame by a mean of 0.85/255, which is resampling noise. And separately, the
+  requested <b>mode dimensions currently have no effect</b>: macOS lands on 1920x1080 whatever we ask for. BetterDummy
+  offers a whole ladder of modes rather than the single one we apply, which is the likely fix and is M6 work
+  (resolution picker). Nothing before M6 depends on it.</p>
+
   <div class="callout"><span class="lbl">Bandwidth:</span> 1080p60 at H.264 real-time is roughly <b>8–20 Mbit/s</b>
   depending on motion. Static desktops compress to almost nothing; video/scrolling spikes it. WebRTC's congestion
   control adapts bitrate automatically, so wire that signal to <code>encoder.set_bitrate()</code>.</p>
@@ -768,7 +778,7 @@ cargo run  -p host
   <table>
     <tr><th>#</th><th>Milestone</th><th>Deliverable / demo</th><th>Rough effort</th></tr>
     <tr><td><b>M0</b></td><td>Virtual-display spike <b>(done)</b></td><td>Verified 27 July 2026 on macOS 26.5: display created, visible to public CoreGraphics, removed cleanly with no ghost. See <code>crates/virtual-display</code>.</td><td>done</td></tr>
-    <tr><td><b>M1</b></td><td>Capture to disk</td><td>Capture the virtual display via ScreenCaptureKit; save frames/PNG to prove the source works.</td><td>2–4 days</td></tr>
+    <tr><td><b>M1</b></td><td>Capture to disk <b>(done)</b></td><td>Verified 27 July 2026: ScreenCaptureKit delivers BGRA frames from the virtual display, written to PNG. See <code>crates/capture</code>.</td><td>done</td></tr>
     <tr><td><b>M2</b></td><td>Encode + local verify</td><td>VideoToolbox → H.264; decode locally (or write .h264/.mp4) to confirm a valid low-latency stream.</td><td>3–5 days</td></tr>
     <tr><td><b>M3</b></td><td>WebRTC to browser (mirror)</td><td>Stream the <i>main</i> display to a browser full-screen; the whole network path proven end-to-end.</td><td>4–7 days</td></tr>
     <tr><td><b>M4</b></td><td><b>Extended display E2E</b></td><td>Point capture at the virtual display → drag a window over → it appears on Windows. <b>v1 done.</b></td><td>2–4 days</td></tr>

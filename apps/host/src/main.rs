@@ -19,14 +19,28 @@
 //! The one rule that prevents most of the crashes here: never touch AppKit off
 //! the main thread.
 //!
-//! # What this currently does (M0)
+//! # What this currently does
 //!
-//! The virtual-display spike and nothing else. It probes for the private
-//! classes, takes a census of active displays, creates the virtual display,
-//! takes another census to prove it appeared, waits so you can look at it, then
-//! drops it and takes a third census to prove it went away.
+//! Two milestones, selected by the first argument.
+//!
+//! - `m0` (default): the virtual-display spike. Probes for the private classes,
+//!   takes a census of active displays, creates the virtual display, takes
+//!   another census to prove it appeared, waits so you can look at it, then
+//!   drops it and takes a third census to prove it went away.
+//! - `m1`: creates the virtual display, points ScreenCaptureKit at it, and
+//!   writes captured frames to PNG.
+//!
+//! ```text
+//! cargo run -p annex-host              # M0, 20 second hold
+//! cargo run -p annex-host -- 60        # M0, 60 second hold
+//! cargo run -p annex-host -- m1        # M1, 10 frames to ./captures
+//! cargo run -p annex-host -- m1 30     # M1, 30 frames
+//! cargo run -p annex-host -- m1 4 2    # M1, 4 frames at 2x (HiDPI probe)
+//! ```
 
 mod displays;
+mod m1;
+mod pngout;
 mod tray;
 
 use annex_core::VirtualDisplayConfig;
@@ -38,9 +52,28 @@ use std::time::Duration;
 const DEFAULT_HOLD_SECS: u64 = 20;
 
 fn main() {
-    let hold = std::env::args()
-        .nth(1)
-        .and_then(|a| a.parse().ok())
+    let arg1 = std::env::args().nth(1).unwrap_or_default();
+
+    if arg1 == "m1" {
+        let frames = std::env::args()
+            .nth(2)
+            .and_then(|a| a.parse().ok())
+            .unwrap_or(10);
+        let scale = std::env::args()
+            .nth(3)
+            .and_then(|a| a.parse().ok())
+            .unwrap_or(1);
+        let out = std::path::PathBuf::from(if scale > 1 { "captures-2x" } else { "captures" });
+        if let Err(e) = m1::run(frames, out, scale) {
+            eprintln!("\n  M1 failed: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    let hold = arg1
+        .parse()
+        .ok()
         .map(Duration::from_secs)
         .unwrap_or(Duration::from_secs(DEFAULT_HOLD_SECS));
 

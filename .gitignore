@@ -13,3 +13,7 @@ CLAUDE.md
 .idea/
 .vscode/
 *.swp
+
+# M1 output
+/captures/
+/captures-2x/
