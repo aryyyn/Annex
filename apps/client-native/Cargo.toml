@@ -1,0 +1,23 @@
+[package]
+name         = "annex-client"
+description  = "Phase 2. Native client for lowest latency and a cleaner full-screen mode."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+
+[[bin]]
+name = "annex-client"
+path = "src/main.rs"
+
+[dependencies]
+annex-core      = { workspace = true }
+annex-transport = { workspace = true }
+
+# M7 wires these in.
+# winit  = { workspace = true }
+# wgpu   = { workspace = true }
+# tokio  = { workspace = true }
+# anyhow = { workspace = true }

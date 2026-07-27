@@ -1,0 +1,30 @@
+[package]
+name         = "annex-host"
+description  = "The Annex macOS host application."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+
+[[bin]]
+name = "annex"
+path = "src/main.rs"
+
+[dependencies]
+annex-core            = { workspace = true }
+annex-virtual-display = { workspace = true }
+annex-capture         = { workspace = true }
+annex-encoder         = { workspace = true }
+annex-transport       = { workspace = true }
+annex-input           = { workspace = true }
+
+# M6 wires the tray UI in.
+# tokio              = { workspace = true }
+# anyhow             = { workspace = true }
+# tracing            = { workspace = true }
+# tracing-subscriber = { workspace = true }
+# tray-icon          = { workspace = true }
+# muda               = { workspace = true }
+# qrcode             = { workspace = true }

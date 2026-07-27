@@ -1,0 +1,21 @@
+[package]
+name         = "annex-capture"
+description  = "ScreenCaptureKit source. Turns a display id into a stream of GPU frames."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+
+[dependencies]
+annex-core = { workspace = true }
+
+# M1 wires these in.
+# [target.'cfg(target_os = "macos")'.dependencies]
+# objc2                    = { workspace = true }
+# objc2-foundation         = { workspace = true }
+# objc2-screen-capture-kit = { workspace = true }
+# objc2-core-video         = { workspace = true }
+# objc2-core-media         = { workspace = true }
+# dispatch2                = { workspace = true }

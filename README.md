@@ -11,8 +11,9 @@ No HDMI. No capture card. No cloud. Both machines just need to be on the same Wi
 The Mac runs a single Rust binary. The second machine opens a URL in its browser.
 
 > [!NOTE]
-> **Status: design only.** There is no code in this repository yet, just the architecture and
-> design document. The first milestone (M0) is a virtual-display spike. See [Roadmap](#roadmap).
+> **Status: scaffolded, not implemented.** The workspace, crate boundaries and public API
+> surface are in place, but every function body is a `todo!()`. Nothing runs yet. The first
+> milestone (M0) is a virtual-display spike. See [Roadmap](#roadmap).
 
 ## How it works
 
@@ -55,7 +56,7 @@ reverses a second channel: input events travel back over a DataChannel and are i
 
 Target glass-to-glass latency is 30 to 60 ms on decent 5 GHz Wi-Fi.
 
-## Planned layout
+## Layout
 
 ```
 annex/
@@ -74,6 +75,21 @@ annex/
 
 All contact with private Apple APIs is confined to `crates/virtual-display`, so a macOS
 update that changes those APIs breaks exactly one file.
+
+Crate packages carry an `annex-` prefix (`annex-core`, `annex-capture`, and so on). A package
+named plainly `core` would shadow the built-in `core` crate at every `use core::` site.
+
+## Building
+
+```bash
+rustup toolchain install stable   # rust-toolchain.toml pins the rest
+cargo check --workspace           # builds today: the stubs are std-only
+cargo run -p annex-host           # panics on todo!() until M0 lands
+```
+
+External dependencies are declared in the root `[workspace.dependencies]` but not yet wired
+into any crate, so the workspace resolves offline. Each crate's `Cargo.toml` lists which ones
+to enable at which milestone.
 
 ## Roadmap
 
@@ -98,8 +114,11 @@ joined at M4.
 - **Client:** any device on the same network with a modern browser
 - **Permissions:** Screen Recording, plus Accessibility for phase-2 input
 
-Annex cannot be distributed on the Mac App Store, because the virtual-display technique
-relies on a private Apple API. Developer ID signing is fine.
+Annex is not distributed on the Mac App Store, because App Review rejects private APIs and
+the virtual display is worth more than the storefront. It ships signed and **notarized** under
+a Developer ID instead, so Gatekeeper launches it without warnings. Notarization is an
+automated malware scan and does not inspect for private-API use, which is how DeskPad,
+BetterDummy, BetterDisplay and SimpleDisplay all ship.
 
 ## Scope
 

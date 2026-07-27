@@ -1,0 +1,16 @@
+[package]
+name         = "annex-input"
+description  = "Phase 2. Injects client input into macOS with CGEvent."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+
+[dependencies]
+annex-core = { workspace = true }
+
+# M5 wires these in.
+# [target.'cfg(target_os = "macos")'.dependencies]
+# objc2-core-foundation = { workspace = true }

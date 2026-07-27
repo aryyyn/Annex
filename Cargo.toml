@@ -1,0 +1,74 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/virtual-display",
+    "crates/capture",
+    "crates/encoder",
+    "crates/transport",
+    "crates/input",
+    "apps/host",
+    "apps/client-native",
+]
+
+[workspace.package]
+version      = "0.1.0"
+edition      = "2021"
+rust-version = "1.82"
+license      = "MIT"
+repository   = "https://github.com/aryyyn/Annex"
+authors      = ["aryyyn"]
+
+# Internal crates. Note the annex- prefix: a package named plainly "core" would
+# shadow the built-in core crate at every `use core::` site.
+[workspace.dependencies]
+annex-core            = { path = "crates/core" }
+annex-virtual-display = { path = "crates/virtual-display" }
+annex-capture         = { path = "crates/capture" }
+annex-encoder         = { path = "crates/encoder" }
+annex-transport       = { path = "crates/transport" }
+annex-input           = { path = "crates/input" }
+
+# External crates, declared here so versions live in one place. They are NOT
+# resolved until a member opts in with `dep = { workspace = true }`, so the
+# workspace checks offline today. Versions below are the known-good families
+# from section 12 of the design doc and are unverified: run `cargo add` to pin
+# the real current release when you first wire each one in.
+objc2                    = "0.6"
+objc2-foundation         = "0.3"
+objc2-app-kit            = "0.3"
+objc2-core-foundation    = "0.3"
+objc2-core-video         = "0.3"
+objc2-core-media         = "0.3"
+objc2-screen-capture-kit = "0.3"
+block2                   = "0.6"
+dispatch2                = "0.2"
+webrtc                   = "0.11"
+tokio                    = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+axum                     = "0.7"
+tower-http               = { version = "0.6", features = ["fs"] }
+serde                    = { version = "1", features = ["derive"] }
+serde_json               = "1"
+thiserror                = "2"
+anyhow                   = "1"
+tracing                  = "0.1"
+tracing-subscriber       = "0.3"
+tray-icon                = "0.19"
+muda                     = "0.15"
+qrcode                   = "0.14"
+winit                    = "0.30"
+wgpu                     = "23"
+
+[profile.dev]
+# Media code is unusably slow with no optimisation, but we still want fast
+# rebuilds of our own crates, so optimise dependencies only.
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[profile.release]
+opt-level     = 3
+lto           = "thin"
+codegen-units = 1
+strip         = "debuginfo"

@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Annex</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- playsinline stops iOS taking the video over with its own player.
+       muted is what lets autoplay run without a user gesture. -->
+  <video id="screen" autoplay playsinline muted></video>
+
+  <div id="overlay">
+    <h1>Annex</h1>
+    <p id="status">Connecting…</p>
+    <button id="go" hidden>Enter full screen</button>
+  </div>
+
+  <script src="client.js"></script>
+</body>
+</html>

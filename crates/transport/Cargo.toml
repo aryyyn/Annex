@@ -1,0 +1,21 @@
+[package]
+name         = "annex-transport"
+description  = "WebRTC peer connections plus the HTTP and WebSocket signalling server."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+authors.workspace      = true
+
+[dependencies]
+annex-core = { workspace = true }
+
+# M3 wires these in. Note this crate is platform neutral on purpose: the future
+# native Windows client reuses it as is.
+# tokio      = { workspace = true }
+# axum       = { workspace = true }
+# tower-http = { workspace = true }
+# webrtc     = { workspace = true }
+# serde      = { workspace = true }
+# serde_json = { workspace = true }
