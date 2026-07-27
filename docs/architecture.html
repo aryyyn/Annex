@@ -196,7 +196,10 @@
   <h3>2.2 Non-goals (explicitly out of scope for v1)</h3>
   <ul>
     <li><b>Internet / NAT traversal.</b> LAN only. No STUN/TURN servers, no cloud relay.</li>
-    <li><b>Mac App Store distribution.</b> The private virtual-display API forbids it; we ship as a signed local app.</li>
+    <li><b>Mac App Store distribution.</b> Ruled out deliberately, not reluctantly. App Review rejects private APIs,
+    and we would rather have the virtual display than the storefront. We ship a notarized Developer-ID app instead
+    (§11), which is how every comparable tool distributes. Using <code>CGVirtualDisplay</code> is therefore an
+    accepted, deliberate choice rather than a risk to be mitigated away.</li>
     <li><b>Audio</b> forwarding.</li>
     <li><b>The reverse direction</b> (Windows host → Mac client).</li>
     <li><b>Interactive input</b> is a <i>phase-2</i> goal, not v1.</li>
@@ -693,8 +696,11 @@ impl Pipeline {
     is plain <code>ws://</code> on the LAN by default; optionally upgrade to <code>wss://</code> with a self-signed
     cert if the threat model warrants.</li>
     <li><b>No data leaves the LAN:</b> no STUN/TURN, no cloud, a strong privacy story vs. commercial tools.</li>
-    <li><b>Code signing / notarization:</b> sign the app (Developer ID) so Gatekeeper allows it; it cannot be
-    notarized for the Mac App Store because of the private API, but Developer-ID distribution is fine.</li>
+    <li><b>Code signing / notarization:</b> sign with a <b>Developer ID</b> certificate and notarize, so Gatekeeper
+    launches it without warnings. Notarization is an <i>automated malware scan</i> and does <b>not</b> inspect for
+    private-API use, so an app calling <code>CGVirtualDisplay</code> notarizes normally. It is <b>App Review</b>,
+    a separate process that applies only to Mac App Store submissions, that rejects private APIs. DeskPad,
+    BetterDummy, BetterDisplay and SimpleDisplay all ship notarized outside the store on exactly this basis.</li>
   </ul>
 </section>
 
@@ -743,7 +749,7 @@ cargo run  -p host
   <table>
     <tr><th>Risk</th><th>Impact</th><th>Mitigation</th></tr>
     <tr><td><b>Private API breaks on a macOS update</b></td><td>Virtual display fails to create</td>
-        <td>Isolated in one crate; mirror DeskPad/BetterDummy (actively maintained); pin/test per macOS version; fall back to an $8 HDMI dummy-plug path (100% public APIs).</td></tr>
+        <td>Isolated in one crate; mirror DeskPad/BetterDummy (actively maintained); pin/test per macOS version; fall back to an $8 HDMI dummy-plug path (100% public APIs). Note this risk is about <i>stability across macOS releases</i> and is untouched by the decision to skip the App Store (§2.2): skipping the store removes a distribution constraint, not a breakage constraint, so the one-crate isolation rule still earns its keep.</td></tr>
     <tr><td><b>objc2 / cidre API churn</b></td><td>Build breaks on upgrade</td><td>Pin exact versions in <code>Cargo.lock</code>; upgrade deliberately.</td></tr>
     <tr><td><b>VideoToolbox FFI complexity</b></td><td>Slow encoder milestone</td><td>Use <code>cidre</code>'s VT wrappers instead of hand-rolled FFI; validate with a local decode loop first.</td></tr>
     <tr><td><b>Wi-Fi latency/jitter</b></td><td>Laggy feel</td><td>5 GHz/Wi-Fi 6; drop-oldest back-pressure; offer wired/USB-tether path; adaptive bitrate.</td></tr>
