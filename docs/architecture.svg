@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" class="ad" viewBox="-10 -10 900 654" width="900" height="654" role="img" aria-label="Annex system architecture: macOS host creates a virtual display, captures and encodes it, and streams it over the LAN to a client that renders it full-screen.">
+  <style>
+  .ad text{ font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif; }
+  .ad .frame{ fill:#fbfcfe; stroke:#2c3e50; stroke-width:1.8; }
+  .ad .band{ fill:#f4f7fa; stroke:#c3ccd8; stroke-width:1.2; stroke-dasharray:6 4; }
+  .ad .box{ fill:#ffffff; stroke:#b6c0cc; stroke-width:1.3; }
+  .ad .box.priv{ fill:#fff7f5; stroke:#c0392b; stroke-width:1.8; }
+  .ad .box.screen{ fill:#eaf0f7; stroke:#2c3e50; stroke-width:1.5; stroke-dasharray:6 3; }
+  .ad .box.p2{ fill:#f8f9fb; stroke:#a7b2c0; stroke-width:1.3; stroke-dasharray:5 3; }
+  .ad .key{ fill:#ffffff; stroke:#d9dee6; stroke-width:1.2; }
+  .ad .hdr{ font-size:15px; font-weight:700; fill:#2c3e50; letter-spacing:.4px; }
+  .ad .ttl{ font-size:16px; font-weight:700; fill:#2c3e50; }
+  .ad .ttl.red{ fill:#c0392b; }
+  .ad .sub{ font-size:12px; fill:#1a1d24; }
+  .ad .mono{ font-family:"SF Mono",Menlo,Consolas,monospace; font-size:11px; fill:#1a1d24; }
+  .ad .note{ font-size:11px; fill:#5b6472; }
+  .ad .note.i{ font-style:italic; }
+  .ad .tag2{ font-size:10.5px; font-weight:700; fill:#c0392b; letter-spacing:.6px; }
+  .ad .flow{ font-size:12px; fill:#5b6472; }
+  .ad .flow.s{ font-size:10.5px; }
+  .ad line,.ad polyline{ fill:none; stroke:#6b7684; stroke-width:1.7; }
+  .ad line.red{ stroke:#c0392b; }
+  .ad line.soft,.ad polyline.soft{ stroke:#98a3b1; stroke-dasharray:5 3; }
+</style>
+<rect x="-10" y="-10" width="900" height="654" fill="#ffffff"/>
+  <defs>
+    <marker id="ad-ah" viewBox="0 0 10 10" refX="9.2" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#6b7684"/></marker>
+    <marker id="ad-ahr" viewBox="0 0 10 10" refX="9.2" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#c0392b"/></marker>
+    <marker id="ad-ahm" viewBox="0 0 10 10" refX="9.2" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 Z" fill="#98a3b1"/></marker>
+  </defs>
+
+  <!-- ===== macOS host ===== -->
+  <rect class="frame" x="10" y="10" width="860" height="386" rx="10"/>
+  <text class="hdr" x="28" y="36">macOS HOST (the Mac) &#183; one Rust binary</text>
+
+  <!-- row A -->
+  <rect class="box priv" x="32" y="58" width="175" height="76" rx="6"/>
+  <text class="ttl red" x="119" y="86" text-anchor="middle">virtual-display</text>
+  <text class="mono"    x="119" y="105" text-anchor="middle">CGVirtualDisplay</text>
+  <text class="tag2"    x="119" y="124" text-anchor="middle">PRIVATE API</text>
+
+  <line class="red" x1="207" y1="96" x2="277" y2="96" marker-end="url(#ad-ahr)"/>
+  <text class="flow s" x="242" y="88"  text-anchor="middle">creates</text>
+  <text class="flow s" x="242" y="114" text-anchor="middle">displayID</text>
+
+  <rect class="box screen" x="277" y="58" width="170" height="76" rx="6"/>
+  <text class="ttl"    x="362" y="86"  text-anchor="middle">VIRTUAL SCREEN</text>
+  <text class="note"   x="362" y="105" text-anchor="middle">macOS renders windows here</text>
+  <text class="note i" x="362" y="123" text-anchor="middle">= the second monitor</text>
+
+  <line class="soft" x1="600" y1="96" x2="455" y2="96" marker-end="url(#ad-ahm)"/>
+  <text class="flow s" x="527" y="88" text-anchor="middle">drag any window onto it</text>
+
+  <rect class="box" x="672" y="58" width="178" height="76" rx="6"/>
+  <text class="ttl"  x="761" y="84"  text-anchor="middle">apps/host + core</text>
+  <text class="note" x="761" y="104" text-anchor="middle">tray UI &#183; QR &#183; config</text>
+  <text class="note" x="761" y="122" text-anchor="middle">owns the main run loop</text>
+
+  <!-- screen -> capture -->
+  <polyline points="362,134 362,162 120,162 120,190" marker-end="url(#ad-ah)"/>
+  <text class="flow s" x="241" y="155" text-anchor="middle">SCStream filtered to displayID</text>
+
+  <!-- row B: the pipeline -->
+  <rect class="box" x="32" y="190" width="175" height="76" rx="6"/>
+  <text class="ttl"  x="119" y="218" text-anchor="middle">capture</text>
+  <text class="sub"  x="119" y="237" text-anchor="middle">ScreenCaptureKit</text>
+  <text class="note" x="119" y="255" text-anchor="middle">SCK dispatch queue</text>
+
+  <line x1="207" y1="228" x2="267" y2="228" marker-end="url(#ad-ah)"/>
+  <text class="flow s" x="237" y="181" text-anchor="middle">CVPixelBuffer &#183; NV12</text>
+  <text class="flow s" x="237" y="252" text-anchor="middle">zero-copy</text>
+
+  <rect class="box" x="267" y="190" width="175" height="76" rx="6"/>
+  <text class="ttl"  x="354" y="218" text-anchor="middle">encoder</text>
+  <text class="sub"  x="354" y="237" text-anchor="middle">VideoToolbox (HW)</text>
+  <text class="note" x="354" y="255" text-anchor="middle">H.264 Annex-B &#183; realtime</text>
+
+  <line x1="442" y1="228" x2="490" y2="228" marker-end="url(#ad-ah)"/>
+  <text class="flow s" x="466" y="181" text-anchor="middle">H.264 NAL units</text>
+  <text class="flow s" x="466" y="252" text-anchor="middle">mpsc</text>
+
+  <rect class="box" x="490" y="190" width="215" height="76" rx="6"/>
+  <text class="ttl"  x="597" y="218" text-anchor="middle">transport</text>
+  <text class="sub"  x="597" y="237" text-anchor="middle">webrtc-rs &#183; axum</text>
+  <text class="note" x="597" y="255" text-anchor="middle">HTTP + WebSocket signaling</text>
+
+  <!-- row C: phase-2 input crate -->
+  <polyline class="soft" points="510,266 510,341 227,341" marker-end="url(#ad-ahm)"/>
+  <text class="flow s" x="370" y="333" text-anchor="middle">InputEvent &#183; mpsc</text>
+
+  <rect class="box p2" x="32" y="306" width="195" height="70" rx="6"/>
+  <text class="ttl"  x="129" y="330" text-anchor="middle">input &#183; phase 2</text>
+  <text class="sub"  x="129" y="349" text-anchor="middle">CGEvent injection</text>
+  <text class="note" x="129" y="366" text-anchor="middle">targets the virtual display</text>
+
+  <!-- legend -->
+  <rect class="key" x="650" y="306" width="200" height="70" rx="5"/>
+  <text class="note" x="662" y="324" style="font-weight:700;letter-spacing:.8px">LEGEND</text>
+  <rect class="box priv" x="662" y="332" width="18" height="11" rx="2"/>
+  <text class="note" x="688" y="342">private Apple API</text>
+  <rect class="box p2" x="662" y="352" width="18" height="11" rx="2"/>
+  <text class="note" x="688" y="362">phase 2, not in v1</text>
+
+  <!-- ===== network ===== -->
+  <rect class="band" x="10" y="404" width="860" height="88" rx="8"/>
+  <text class="hdr"  x="30" y="442">Wi-Fi / LAN</text>
+  <text class="note" x="30" y="461">same network &#183; no cables</text>
+
+  <polyline points="560,266 560,470 295,470 295,502" marker-end="url(#ad-ah)"/>
+  <text class="flow" x="427" y="462" text-anchor="middle">H.264 / RTP over DTLS-SRTP</text>
+
+  <polyline class="soft" points="755,502 755,444 620,444 620,266" marker-end="url(#ad-ahm)"/>
+  <text class="flow" x="687" y="436" text-anchor="middle">input over DataChannel</text>
+
+  <!-- ===== client ===== -->
+  <rect class="frame" x="140" y="502" width="730" height="118" rx="10"/>
+  <text class="hdr" x="160" y="526">CLIENT (the laptop that becomes the second monitor)</text>
+
+  <rect class="box" x="160" y="538" width="270" height="70" rx="6"/>
+  <text class="ttl"  x="295" y="561" text-anchor="middle" style="font-size:14px">v1 &#183; BROWSER</text>
+  <text class="mono" x="295" y="579" text-anchor="middle">opens http://&lt;mac-ip&gt;:8787</text>
+  <text class="note" x="295" y="597" text-anchor="middle">WebRTC decode &#8594; &lt;video&gt; full-screen</text>
+
+  <rect class="box p2" x="450" y="538" width="190" height="70" rx="6"/>
+  <text class="ttl"  x="545" y="561" text-anchor="middle" style="font-size:14px">v2 &#183; NATIVE (Rust)</text>
+  <text class="sub"  x="545" y="579" text-anchor="middle">winit + wgpu</text>
+  <text class="note" x="545" y="597" text-anchor="middle">HW decode &#183; lowest latency</text>
+
+  <rect class="box p2" x="660" y="538" width="190" height="70" rx="6"/>
+  <text class="ttl"  x="755" y="561" text-anchor="middle" style="font-size:14px">INPUT &#183; phase 2</text>
+  <text class="sub"  x="755" y="579" text-anchor="middle">mouse / keyboard</text>
+  <text class="note" x="755" y="597" text-anchor="middle">&#8594; DataChannel</text>
+</svg>

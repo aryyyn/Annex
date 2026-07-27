@@ -841,8 +841,17 @@ cargo run  -p host
     <li><b>DeskPad</b>: Swift virtual monitor, MIT. Gold-standard for the <code>CGVirtualDisplay</code> creation code. <span class="small">github.com/Stengo/DeskPad</span></li>
     <li><b>BetterDummy</b>: Swift virtual display, MIT. Second independent reference for the private API. <span class="small">github.com/waydabber/BetterDummy</span></li>
     <li><b>BetterDisplay</b>: the productized, feature-rich descendant. <span class="small">github.com/waydabber/BetterDisplay</span></li>
+    <li><b>SimpleDisplay</b>: a current (macOS 14+) menu-bar app doing the same <code>CGVirtualDisplay</code> trick.
+        Useful as a third, recently-maintained cross-check on the header. <b>GPL-3.0</b>, see the licence note below.
+        <span class="small">simpledisplay.app</span></li>
     <li><b>Deskreen</b>: Electron/WebRTC browser-as-second-screen; the streaming/architecture model. <span class="small">github.com/pavlobu/deskreen</span></li>
   </ul>
+  <div class="callout warn"><span class="lbl">Licence hygiene on the virtual-display crate:</span>
+  DeskPad and BetterDummy are <b>MIT</b>; SimpleDisplay is <b>GPL-3.0</b>. GPL-3.0 is copyleft, so lifting its
+  code into <code>crates/virtual-display</code> would oblige Annex to ship under GPL-3.0 as well. Read SimpleDisplay
+  to <i>understand</i> the API and to confirm what still works on current macOS, but transcribe the header and the
+  creation recipe from the MIT projects. None of these tools solve Half 2: SimpleDisplay's own docs tell you to
+  reach the virtual display over VNC, Screen Sharing, or Parsec, which is precisely the gap Annex closes.</p>
   <h4>Rust libraries</h4>
   <ul>
     <li><b>objc2</b> family: Apple framework bindings + runtime. <span class="small">github.com/madsmtm/objc2</span></li>
