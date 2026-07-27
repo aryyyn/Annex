@@ -11,21 +11,45 @@ No HDMI. No capture card. No cloud. Both machines just need to be on the same Wi
 The Mac runs a single Rust binary. The second machine opens a URL in its browser.
 
 > [!NOTE]
-> **Status: M0 through M3 done.** The whole pipeline runs: virtual display, capture,
-> H.264 encode, and WebRTC streaming to a browser. Verified 27 July 2026 on macOS 26.5.
-> M4 joins the two halves. See [Roadmap](#roadmap).
->
-> ```
-> $ cargo run -p annex-host -- m3
->   main display 1 at 1440x900
->   serving on 0.0.0.0:8787
->   open this on the other machine:
->       http://192.168.1.75:8787/
->   clients 1  |  encoded 51 frames, 1 keyframes  |  sent 47  dropped 0
-> ```
->
-> Confirmed with a real headless Chrome doing the actual handshake:
-> `conn: connected, codec: video/H264, 1440x900, frames decoded`.
+> **Status: it works.** Virtual display, capture, H.264 encode, WebRTC to a browser, and a
+> menu bar app to drive it. Verified 27 July 2026 on macOS 26.5 at 57 fps with zero freezes
+> and zero dropped frames. Input forwarding (M5) is the next thing. See [Roadmap](#roadmap).
+
+## Run it
+
+```bash
+cargo run --release -p annex-host
+```
+
+That creates a new desktop, starts streaming it, and puts an icon in your menu bar. The
+terminal prints a URL and a scannable QR code; open either on the other machine and drag a
+window off the edge of your screen to move it across.
+
+```
+Annex
+
+  source      a new desktop at 1920x1080
+  open on the other machine:
+
+      http://192.168.1.75:8787/
+
+    █████████████████████████████
+    ██ ▄▄▄▄▄ ████  ▀▀  █ ▄▄▄▄▄ ██
+    ██ █   █ ██▄ █▀█▄▄██ █   █ ██
+    ██ █▄▄▄█ █▀▄█▄█ █ ▀█ █▄▄▄█ ██
+    ██▄▄▄▄▄▄▄█▄▀▄▀▄█ ▀ █▄▄▄▄▄▄▄██
+    █████████████████████████████
+
+  running. Use the menu bar icon to quit.
+```
+
+The menu bar item shows the source, resolution, connected clients and live frame rate, and
+offers Copy URL, Open in browser, Show QR code and Quit. **Quit through the menu**, not by
+killing the process: the virtual display is removed by a destructor, so a hard kill leaves a
+ghost monitor you cannot clear without logging out.
+
+`cargo run --release -p annex-host -- mirror` streams your existing screen instead of adding
+a new one, which is useful for testing without the private API involved.
 
 ## How it works
 
@@ -102,6 +126,9 @@ cargo run -p annex-host -- m2 45  # M2: encode 45 frames to out.h264
 cargo run -p annex-host -- m3     # M3: stream the main display, open the printed URL
 ```
 
+Those milestone harnesses are kept because each isolates one layer, which is what you want
+when something breaks. `annex` with no arguments is the real application.
+
 M1 and M2 need the **Screen Recording** permission. Running under `cargo` means macOS attaches the
 grant to your terminal rather than to Annex, and TCC decisions are read at process start, so
 you have to restart the terminal after granting it. A signed `.app` bundle fixes this properly
@@ -124,9 +151,9 @@ already loaded into the process.
 | **M1** | Capture to disk | **Done.** ScreenCaptureKit delivers BGRA frames from the virtual display, written to PNG |
 | **M2** | Encode and verify | **Done.** VideoToolbox H.264 Main, Annex-B, zero-copy. ffmpeg decodes it with zero errors |
 | **M3** | WebRTC to browser | **Done.** Chrome connects, negotiates H.264, and decodes frames over the LAN |
-| **M4** | Extended display E2E | Point capture at the virtual display. **v1 done.** |
+| **M4** | Extended display E2E | **Done.** `annex` creates a virtual display and streams it |
 | **M5** | Interactive input | DataChannel input, `CGEvent` injection |
-| **M6** | Polish | Tray UI, QR code, auth token, resolution picker, multi-client, HEVC |
+| **M6** | Polish | **Partly done:** menu bar UI and QR code work. Auth token, resolution picker and HEVC remain |
 | **M7** | Native client | winit and wgpu app with hardware decode for lowest latency |
 
 M3 deliberately uses the real main display, so the streaming half is proven before anything

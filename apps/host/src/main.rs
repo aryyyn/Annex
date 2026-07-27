@@ -19,6 +19,13 @@
 //! The one rule that prevents most of the crashes here: never touch AppKit off
 //! the main thread.
 //!
+//! # Running it
+//!
+//! `annex` with no arguments starts the real application: it creates a virtual
+//! display, streams it, and puts a menu bar icon up. Everything else is a
+//! milestone harness kept around because each one isolates a different layer,
+//! which is exactly what you want when something breaks.
+//!
 //! # What this currently does
 //!
 //! Two milestones, selected by the first argument.
@@ -47,7 +54,9 @@
 //! cargo run -p annex-host -- m3 virtual # M4, stream the virtual display
 //! ```
 
+mod app;
 mod displays;
+mod icon;
 mod m1;
 mod m2;
 mod m3;
@@ -64,6 +73,23 @@ const DEFAULT_HOLD_SECS: u64 = 20;
 
 fn main() {
     let arg1 = std::env::args().nth(1).unwrap_or_default();
+
+    // No arguments, or `mirror`: the actual application.
+    if arg1.is_empty() || arg1 == "mirror" || arg1 == "extend" {
+        let opts = app::Options {
+            extend: arg1 != "mirror",
+            port: std::env::args()
+                .nth(2)
+                .and_then(|a| a.parse().ok())
+                .unwrap_or(8787),
+            ..Default::default()
+        };
+        if let Err(e) = app::run(opts) {
+            eprintln!("\n  Annex failed to start: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
 
     if arg1 == "m1" {
         let frames = std::env::args()
