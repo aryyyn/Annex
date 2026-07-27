@@ -8,11 +8,40 @@ license.workspace      = true
 repository.workspace   = true
 authors.workspace      = true
 
+# Wired in at M2.
 [dependencies]
 annex-core    = { workspace = true }
 annex-capture = { workspace = true }
+objc2         = { workspace = true }
 
-# M2 wires these in.
-# [target.'cfg(target_os = "macos")'.dependencies]
-# objc2-core-media = { workspace = true }
-# objc2-core-video = { workspace = true }
+objc2-core-foundation = { workspace = true, features = [
+    "CFBase",
+    "CFDictionary",
+    "CFNumber",
+    "CFString",
+    "CFArray",
+] }
+
+objc2-core-media = { workspace = true, features = [
+    "CMSampleBuffer",
+    "CMBlockBuffer",
+    "CMFormatDescription",
+    "CMTime",
+    "CMBase",
+] }
+
+objc2-core-video = { workspace = true, features = [
+    "CVPixelBuffer",
+    "CVBuffer",
+    "CVImageBuffer",
+] }
+
+objc2-video-toolbox = { version = "0.3.2", features = [
+    "VTCompressionSession",
+    "VTCompressionProperties",
+    "VTSession",
+    "VTErrors",
+    "VTBase",
+    "objc2-core-media",
+    "objc2-core-video",
+] }

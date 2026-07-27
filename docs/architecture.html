@@ -779,13 +779,21 @@ cargo run  -p host
     <tr><th>#</th><th>Milestone</th><th>Deliverable / demo</th><th>Rough effort</th></tr>
     <tr><td><b>M0</b></td><td>Virtual-display spike <b>(done)</b></td><td>Verified 27 July 2026 on macOS 26.5: display created, visible to public CoreGraphics, removed cleanly with no ghost. See <code>crates/virtual-display</code>.</td><td>done</td></tr>
     <tr><td><b>M1</b></td><td>Capture to disk <b>(done)</b></td><td>Verified 27 July 2026: ScreenCaptureKit delivers BGRA frames from the virtual display, written to PNG. See <code>crates/capture</code>.</td><td>done</td></tr>
-    <tr><td><b>M2</b></td><td>Encode + local verify</td><td>VideoToolbox → H.264; decode locally (or write .h264/.mp4) to confirm a valid low-latency stream.</td><td>3–5 days</td></tr>
+    <tr><td><b>M2</b></td><td>Encode and verify <b>(done)</b></td><td>Verified 27 July 2026: VideoToolbox H.264 Main, Annex-B, zero-copy from capture. ffprobe reports <code>has_b_frames=0</code> and ffmpeg decodes with zero errors. See <code>crates/encoder</code>.</td><td>done</td></tr>
     <tr><td><b>M3</b></td><td>WebRTC to browser (mirror)</td><td>Stream the <i>main</i> display to a browser full-screen; the whole network path proven end-to-end.</td><td>4–7 days</td></tr>
     <tr><td><b>M4</b></td><td><b>Extended display E2E</b></td><td>Point capture at the virtual display → drag a window over → it appears on Windows. <b>v1 done.</b></td><td>2–4 days</td></tr>
     <tr><td><b>M5</b></td><td>Interactive input</td><td>DataChannel input → <code>CGEvent</code> injection; mouse/keyboard work on the second screen.</td><td>~1 week</td></tr>
     <tr><td><b>M6</b></td><td>Polish</td><td>Tray UI, QR/URL, auth token, resolution picker, auto-reconnect, multi-client, HEVC.</td><td>ongoing</td></tr>
     <tr><td><b>M7</b></td><td>Native Rust client</td><td><code>winit</code>+<code>wgpu</code> Windows app with HW decode for lowest latency.</td><td>1–2 weeks</td></tr>
   </table>
+  <div class="callout ok"><span class="lbl">M2 result, 27 July 2026:</span> 45 frames encoded, 45 out, 0 malformed.
+  Every keyframe carries SPS and PPS in band, so a client joining mid-stream can start at any keyframe. ffprobe
+  independently confirms <b>profile Main, 1920x1080, yuv420p, <code>has_b_frames=0</code></b>, and ffmpeg decodes the
+  file with zero errors. That <code>has_b_frames=0</code> is external proof that
+  <code>AllowFrameReordering=false</code> took effect, which is the single most important latency setting in the
+  encoder. Measured around 4.4 Mbit/s on a near-static desktop against an 8000 kbps ceiling, comfortably inside the
+  budget in section 10.</p>
+
   <div class="callout ok"><span class="lbl">Fastest path to "it works":</span> M0 → M1 → M2 → M3 → M4. Note that
   M3 uses the <i>real</i> main display so you can prove the streaming half <b>before</b> depending on the private
   virtual-display API, so the two halves are validated independently, then joined at M4.</p>

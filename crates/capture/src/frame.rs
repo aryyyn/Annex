@@ -34,6 +34,15 @@ pub struct RawFrame {
 }
 
 impl RawFrame {
+    /// The underlying GPU buffer, for handing straight to VideoToolbox.
+    ///
+    /// This is the zero-copy path: the encoder takes this reference and the
+    /// pixels never leave the GPU. Exposed rather than kept private precisely
+    /// so `annex-encoder` never has to call [`RawFrame::to_bgra_vec`].
+    pub fn pixel_buffer(&self) -> &CVPixelBuffer {
+        &self.buffer
+    }
+
     pub fn width(&self) -> usize {
         CVPixelBufferGetWidth(&self.buffer)
     }

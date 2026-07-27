@@ -16,7 +16,7 @@ path = "src/main.rs"
 annex-core            = { workspace = true }
 annex-virtual-display = { workspace = true }
 annex-capture.workspace = true
-annex-encoder         = { workspace = true }
+annex-encoder.workspace = true
 annex-transport       = { workspace = true }
 annex-input           = { workspace = true }
 png = "0.18.1"

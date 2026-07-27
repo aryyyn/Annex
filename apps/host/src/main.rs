@@ -29,6 +29,9 @@
 //!   drops it and takes a third census to prove it went away.
 //! - `m1`: creates the virtual display, points ScreenCaptureKit at it, and
 //!   writes captured frames to PNG.
+//! - `m2`: the same, but encodes to H.264 with VideoToolbox and writes an
+//!   Annex-B elementary stream. This is the first zero-copy path: the pixel
+//!   buffer goes capture to encoder without ever reaching the CPU.
 //!
 //! ```text
 //! cargo run -p annex-host              # M0, 20 second hold
@@ -36,10 +39,12 @@
 //! cargo run -p annex-host -- m1        # M1, 10 frames to ./captures
 //! cargo run -p annex-host -- m1 30     # M1, 30 frames
 //! cargo run -p annex-host -- m1 4 2    # M1, 4 frames at 2x (HiDPI probe)
+//! cargo run -p annex-host -- m2 60     # M2, 60 frames to out.h264
 //! ```
 
 mod displays;
 mod m1;
+mod m2;
 mod pngout;
 mod tray;
 
@@ -66,6 +71,19 @@ fn main() {
         let out = std::path::PathBuf::from(if scale > 1 { "captures-2x" } else { "captures" });
         if let Err(e) = m1::run(frames, out, scale) {
             eprintln!("\n  M1 failed: {e}");
+            std::process::exit(1);
+        }
+        return;
+    }
+
+    if arg1 == "m2" {
+        let frames = std::env::args()
+            .nth(2)
+            .and_then(|a| a.parse().ok())
+            .unwrap_or(60);
+        let out = std::path::PathBuf::from("out.h264");
+        if let Err(e) = m2::run(frames, out) {
+            eprintln!("\n  M2 failed: {e}");
             std::process::exit(1);
         }
         return;

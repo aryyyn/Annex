@@ -11,16 +11,18 @@ No HDMI. No capture card. No cloud. Both machines just need to be on the same Wi
 The Mac runs a single Rust binary. The second machine opens a URL in its browser.
 
 > [!NOTE]
-> **Status: M0 and M1 done.** The virtual display works and ScreenCaptureKit captures it.
-> Verified 27 July 2026 on macOS 26.5. Encode and transport are still `todo!()`.
-> See [Roadmap](#roadmap).
+> **Status: M0, M1 and M2 done.** Virtual display, capture, and H.264 encode all work,
+> verified 27 July 2026 on macOS 26.5. Transport is next. See [Roadmap](#roadmap).
 >
 > ```
-> $ cargo run -p annex-host -- m1 6
->   displayID = 13
->   current mode: 1920x1080 points, 1920x1080 backing pixels  (1x, capture at scale 1)
->   frame  0   1920 x 1080  stride 7680   BGRA  pts 1252500503785us  luma 0.098
->   captured 6 frames, wrote 6 PNGs to captures
+> $ cargo run -p annex-host -- m2 45
+>   sample   0  113196 bytes  KEY  [SPS(11), PPS(4), SEI(58), IDR slice(113107)]
+>   encoder: 45 frames in, 45 out, 3 keyframes, 0 malformed
+>   structure: 54 NAL units, 3 SPS, 3 PPS, 3 IDR, 42 non-IDR slices
+>   presentation timestamps are monotonic: no B-frames, no reordering
+>
+> $ ffprobe out.h264
+>   profile=Main  width=1920  height=1080  has_b_frames=0  nb_read_frames=45
 > ```
 
 ## How it works
@@ -94,17 +96,18 @@ rustup toolchain install stable   # rust-toolchain.toml pins the rest
 cargo check --workspace
 cargo run -p annex-host -- 20     # M0: create a display, hold 20s, remove it
 cargo run -p annex-host -- m1 10  # M1: capture 10 frames to ./captures
+cargo run -p annex-host -- m2 45  # M2: encode 45 frames to out.h264
 ```
 
-M1 needs the **Screen Recording** permission. Running under `cargo` means macOS attaches the
+M1 and M2 need the **Screen Recording** permission. Running under `cargo` means macOS attaches the
 grant to your terminal rather than to Annex, and TCC decisions are read at process start, so
 you have to restart the terminal after granting it. A signed `.app` bundle fixes this properly
 at M6.
 
-`annex-virtual-display` and `annex-capture` have real dependencies (the `objc2` family). The
-remaining crates are std-only stubs; their dependency versions are declared in the root
-`[workspace.dependencies]` but not wired in yet, and each crate's `Cargo.toml` lists which
-ones to enable at which milestone.
+`annex-virtual-display`, `annex-capture` and `annex-encoder` have real dependencies (the
+`objc2` family). The remaining crates are std-only stubs; their dependency versions are
+declared in the root `[workspace.dependencies]` but not wired in yet, and each crate's
+`Cargo.toml` lists which ones to enable at which milestone.
 
 No special linker flags are needed for the private API. The classes are resolved by name at
 runtime with `AnyClass::get`, so there is no link-time symbol to satisfy: CoreGraphics is
@@ -116,7 +119,7 @@ already loaded into the process.
 |---|---|---|
 | **M0** | Virtual-display spike | **Done.** A fake monitor appears in System Settings and drops cleanly on exit |
 | **M1** | Capture to disk | **Done.** ScreenCaptureKit delivers BGRA frames from the virtual display, written to PNG |
-| **M2** | Encode and verify | VideoToolbox to H.264, decode locally to confirm a valid low-latency stream |
+| **M2** | Encode and verify | **Done.** VideoToolbox H.264 Main, Annex-B, zero-copy. ffmpeg decodes it with zero errors |
 | **M3** | WebRTC to browser | Stream the *main* display full-screen, proving the whole network path |
 | **M4** | Extended display E2E | Point capture at the virtual display. **v1 done.** |
 | **M5** | Interactive input | DataChannel input, `CGEvent` injection |
