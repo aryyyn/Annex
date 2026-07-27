@@ -89,8 +89,11 @@ pub fn run(use_virtual: bool, port: u16) -> Result<(), Box<dyn std::error::Error
     let fps = 30u32;
     let rtc_cfg = RtcConfig {
         bind_addr: format!("0.0.0.0:{port}").parse()?,
+        // The milestone harnesses are local diagnostics, so they stay open on
+        // purpose. The application itself always requires a token.
         auth_token: None,
         allow_input: false,
+        max_clients: 4,
         width,
         height,
         fps,
@@ -182,12 +185,13 @@ pub fn run(use_virtual: bool, port: u16) -> Result<(), Box<dyn std::error::Error
         let clients = s.clients_now.load(Ordering::Relaxed);
         let est = encoder.stats();
         println!(
-            "  clients {clients}  |  encoded {} frames, {} keyframes  |  sent {} (+{})  dropped {}",
+            "  clients {clients}  |  encoded {} frames, {} keyframes  |  sent {} (+{})  dropped {}  no-receiver {}",
             est.frames_out,
             est.keyframes,
             sent,
             sent - last_sent,
-            s.samples_dropped.load(Ordering::Relaxed)
+            s.samples_dropped.load(Ordering::Relaxed),
+            s.broadcast_no_receiver.load(Ordering::Relaxed)
         );
         last_sent = sent;
     }

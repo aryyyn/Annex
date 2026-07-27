@@ -704,22 +704,67 @@ impl Pipeline {
 <!-- ============================ 11 ============================ -->
 <section>
   <h1>11. Security, Permissions &amp; Privacy</h1>
+
+  <div class="callout warn"><span class="lbl">Audited 27 July 2026. Three findings, all fixed.</span>
+  The threat here is not a stolen session key. It is <b>someone watching your screen</b>, so the bar is higher than
+  for a typical LAN service.</p>
+
+  <h3>11.1 What the audit found</h3>
+  <table>
+    <tr><th>Finding</th><th>Why it mattered</th><th>Fix</th></tr>
+    <tr><td><b>No authentication at all</b></td>
+        <td>The server binds <code>0.0.0.0</code> and accepted every client. Anyone on the network who opened the URL
+            watched your screen. A café, an office, a shared flat.</td>
+        <td>A 128-bit token from the OS CSPRNG, generated fresh at every launch and required by the handshake. It
+            reaches only the person at the keyboard, through the printed URL, the QR code, or the menu bar.</td></tr>
+    <tr><td><b>Any website could open a session</b></td>
+        <td>The worse one. WebSockets are deliberately exempt from the same-origin policy, so a page on
+            <code>evil.example</code> could open <code>ws://192.168.1.75:8787/signal</code> while you browsed and
+            receive your desktop. No click required beyond visiting the page.</td>
+        <td>Browsers always send <code>Origin</code> on a WebSocket handshake. It must be absent, meaning a non-browser
+            client, or equal to our own host. Verified: a forged origin gets <b>403</b>.</td></tr>
+    <tr><td><b>DNS rebinding</b></td>
+        <td>The same attack wearing a hat. Point <code>evil.example</code> at the LAN address and the page's origin
+            genuinely <i>is</i> the attacker's, so the <code>Origin</code> check passes.</td>
+        <td>The <code>Host</code> header still names the attacker's domain, so only a literal IP or
+            <code>localhost</code> is accepted. Verified: <b>421</b>.</td></tr>
+  </table>
+
+  <h3>11.2 Hardening applied alongside</h3>
   <ul>
-    <li><b>Screen Recording permission</b> (TCC): required by ScreenCaptureKit. macOS prompts on first capture;
-    the app appears under <b>System Settings → Privacy &amp; Security → Screen Recording</b>.</li>
-    <li><b>Accessibility permission</b>: required only for phase-2 input injection (<code>CGEvent</code>).</li>
-    <li><b>Network exposure:</b> the host opens an HTTP/WebSocket port on the LAN. Anyone on the same network could
-    connect. Mitigate with a <b>shared-secret token</b> (<code>Hello{token}</code>) shown in the tray UI and encoded
-    in the QR/URL; reject sessions without it.</li>
-    <li><b>Transport encryption:</b> WebRTC media is <b>always encrypted</b> (DTLS-SRTP). The <i>signaling</i> WebSocket
-    is plain <code>ws://</code> on the LAN by default; optionally upgrade to <code>wss://</code> with a self-signed
-    cert if the threat model warrants.</li>
-    <li><b>No data leaves the LAN:</b> no STUN/TURN, no cloud, a strong privacy story vs. commercial tools.</li>
-    <li><b>Code signing / notarization:</b> sign with a <b>Developer ID</b> certificate and notarize, so Gatekeeper
-    launches it without warnings. Notarization is an <i>automated malware scan</i> and does <b>not</b> inspect for
-    private-API use, so an app calling <code>CGVirtualDisplay</code> notarizes normally. It is <b>App Review</b>,
-    a separate process that applies only to Mac App Store submissions, that rejects private APIs. DeskPad,
-    BetterDummy, BetterDisplay and SimpleDisplay all ship notarized outside the store on exactly this basis.</li>
+    <li><b>Constant-time token comparison.</b> A byte-by-byte <code>==</code> returns at the first difference, so its
+    timing reveals how much of a guess was right and the token can be rebuilt one character at a time.</li>
+    <li><b>Connection ceiling</b> (4 by default). Each session costs a peer connection and a share of the encoder, so
+    unbounded connections are both a resource leak and a way to make the machine unusable.</li>
+    <li><b>64 KB cap on signalling messages.</b> An SDP is a few kilobytes; anything near a megabyte is an attempt to
+    exhaust memory.</li>
+    <li><b>Rejections are counted.</b> A non-zero <code>rejected_auth</code> on a home network means something is
+    probing the port.</li>
+    <li>Checks run <b>before the WebSocket upgrade</b>, so a refusal costs an attacker an HTTP error rather than a live
+    socket and a peer connection.</li>
+  </ul>
+
+  <h3>11.3 Permissions and transport</h3>
+  <ul>
+    <li><b>Screen Recording permission</b> (TCC): required by ScreenCaptureKit. Without it the stream starts and
+    silently never delivers, so it is checked explicitly at startup rather than left to look like a hang.</li>
+    <li><b>Accessibility permission</b>: required only for phase-2 input injection.</li>
+    <li><b>Transport encryption:</b> WebRTC media is <b>always</b> encrypted with DTLS-SRTP. The signalling WebSocket is
+    plain <code>ws://</code> on the LAN, which is a deliberate trade: it carries no media, and an attacker who can
+    already read it still cannot decrypt anything.</li>
+    <li><b>No data leaves the LAN:</b> no STUN, no TURN, no cloud.</li>
+    <li><b>Code signing:</b> sign with a Developer ID and notarize (§12).</li>
+  </ul>
+
+  <h3>11.4 Known residual risk</h3>
+  <ul>
+    <li>The token travels in the URL query string so a QR code can carry it, which means it lands in browser history
+    on the client. Acceptable for a secret that dies with the process, but it is the reason the token is not reused
+    across launches.</li>
+    <li>Binding <code>0.0.0.0</code> exposes the port on every interface, including a VPN. The token is what makes
+    that acceptable; binding to a chosen interface would be better and is not yet done.</li>
+    <li>No rate limiting on failed handshakes. The connection ceiling bounds the damage, and 128 bits is not
+    guessable, but a deliberate lockout would be better.</li>
   </ul>
 </section>
 

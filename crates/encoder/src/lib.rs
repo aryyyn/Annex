@@ -452,7 +452,7 @@ fn extract(sample: &CMSampleBuffer) -> Option<EncodedSample> {
     };
 
     Some(EncodedSample {
-        data,
+        data: data.into(),
         pts: pts_us,
         dur: std::time::Duration::ZERO,
         keyframe,

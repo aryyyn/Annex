@@ -4,7 +4,7 @@ use crate::RtcError;
 use annex_core::protocol::{IceCandidate, Sdp};
 use annex_core::EncodedSample;
 use std::net::SocketAddr;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use webrtc::api::interceptor_registry::register_default_interceptors;
@@ -17,14 +17,22 @@ use webrtc::peer_connection::configuration::RTCConfiguration;
 use webrtc::peer_connection::sdp::session_description::RTCSessionDescription;
 use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::rtcp::payload_feedbacks::picture_loss_indication::PictureLossIndication;
+use webrtc::rtcp::receiver_report::ReceiverReport;
 use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
 use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 
 #[derive(Debug, Clone)]
 pub struct RtcConfig {
     pub bind_addr: SocketAddr,
+    /// Required shared secret. The application always sets one; `None` means
+    /// anyone who can reach the port can watch the screen, which is only ever
+    /// appropriate in a test.
     pub auth_token: Option<String>,
     pub allow_input: bool,
+    /// Ceiling on simultaneous sessions. Each costs a peer connection and a
+    /// share of the encoder's output, so this is both a resource guard and a
+    /// denial-of-service limit.
+    pub max_clients: u64,
     pub width: u32,
     pub height: u32,
     pub fps: u32,
@@ -36,6 +44,7 @@ impl Default for RtcConfig {
             bind_addr: "0.0.0.0:8787".parse().expect("valid literal"),
             auth_token: None,
             allow_input: false,
+            max_clients: 4,
             width: 1920,
             height: 1080,
             fps: 30,
@@ -50,6 +59,8 @@ pub struct Session {
     frame_dur: Duration,
     /// Set when the client sends a picture loss indication.
     want_keyframe: Arc<AtomicBool>,
+    /// Worst packet loss reported since the last read, as a percentage.
+    loss_pct: Arc<AtomicU8>,
 }
 
 impl Session {
@@ -115,14 +126,27 @@ impl Session {
         // Ignoring PLI leaves a broken client showing garbage until the next
         // scheduled keyframe, which at a 4 second interval is an eternity.
         let want_key = Arc::new(AtomicBool::new(false));
+        // Worst fraction-lost seen since the last read, as a percentage. This
+        // is the congestion signal: the receiver states, in every report, what
+        // proportion of packets went missing.
+        let loss = Arc::new(AtomicU8::new(0));
         {
             let want = Arc::clone(&want_key);
+            let loss = Arc::clone(&loss);
             tokio::spawn(async move {
                 let mut buf = vec![0u8; 1500];
                 while let Ok((packets, _)) = sender.read(&mut buf).await {
                     for p in packets {
-                        if p.as_any().downcast_ref::<PictureLossIndication>().is_some() {
+                        let any = p.as_any();
+                        if any.downcast_ref::<PictureLossIndication>().is_some() {
                             want.store(true, Ordering::SeqCst);
+                        }
+                        if let Some(rr) = any.downcast_ref::<ReceiverReport>() {
+                            for r in &rr.reports {
+                                // fraction_lost is expressed in 1/256 units.
+                                let pct = (r.fraction_lost as u32 * 100 / 256) as u8;
+                                loss.fetch_max(pct, Ordering::Relaxed);
+                            }
                         }
                     }
                 }
@@ -134,6 +158,7 @@ impl Session {
             track,
             frame_dur: Duration::from_secs_f64(1.0 / cfg.fps.max(1) as f64),
             want_keyframe: want_key,
+            loss_pct: loss,
         })
     }
 
@@ -191,7 +216,9 @@ impl Session {
         };
         self.track
             .write_sample(&Sample {
-                data: s.data.clone().into(),
+                // Free: Bytes is reference counted, so this is an atomic
+                // increment rather than a copy of the whole access unit.
+                data: s.data.clone(),
                 timestamp: SystemTime::now(),
                 duration,
                 ..Default::default()
@@ -210,6 +237,12 @@ impl Session {
     /// request rather than one per frame until someone notices.
     pub fn take_keyframe_request(&self) -> bool {
         self.want_keyframe.swap(false, Ordering::SeqCst)
+    }
+
+    /// Worst packet loss this client has reported since the last call, as a
+    /// percentage. Reading it resets the high-water mark.
+    pub fn take_loss_pct(&self) -> u8 {
+        self.loss_pct.swap(0, Ordering::Relaxed)
     }
 
     pub async fn close(&self) {

@@ -19,10 +19,11 @@
 //! so depending on a relative path to `web/client` would break the moment it
 //! moved.
 
-use crate::{AppState, Session};
+use crate::{auth, AppState, Session};
 use annex_core::protocol::{ClientMsg, HostMsg};
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
@@ -60,8 +61,45 @@ fn css(body: &'static str) -> Response {
     ([("content-type", "text/css; charset=utf-8")], body).into_response()
 }
 
-async fn ws_upgrade(ws: WebSocketUpgrade, State(state): State<Arc<AppState>>) -> Response {
-    ws.on_upgrade(move |socket| handle_socket(socket, state))
+/// Everything that must be true before a socket is even upgraded.
+///
+/// Checked here rather than after the upgrade because a refusal should cost an
+/// attacker a plain HTTP error, not a live WebSocket and a peer connection.
+async fn ws_upgrade(
+    ws: WebSocketUpgrade,
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Response {
+    let header = |k: &str| headers.get(k).and_then(|v| v.to_str().ok());
+
+    // DNS rebinding: a name resolved to our address defeats the Origin check,
+    // because the page's origin really is the attacker's. The Host header is
+    // what still gives them away.
+    if !auth::host_allowed(header("host")) {
+        return (StatusCode::MISDIRECTED_REQUEST, "bad host").into_response();
+    }
+
+    // WebSockets are exempt from the same-origin policy, so without this any
+    // page you visit while Annex runs could open a session and receive your
+    // screen.
+    let expected = header("host").unwrap_or_default().to_string();
+    if !auth::origin_allowed(header("origin"), &expected) {
+        return (StatusCode::FORBIDDEN, "bad origin").into_response();
+    }
+
+    // Each session costs a peer connection and a share of the encoder's output.
+    // Unbounded connections are a denial of service and, on a shared network,
+    // a way to make the machine unusable.
+    if state.stats.clients_now.load(Ordering::Relaxed) >= state.cfg.max_clients {
+        return (StatusCode::SERVICE_UNAVAILABLE, "too many clients").into_response();
+    }
+
+    ws
+        // An SDP is a few kilobytes. Anything near a megabyte is an attempt to
+        // exhaust memory, not a real client.
+        .max_message_size(64 * 1024)
+        .max_frame_size(64 * 1024)
+        .on_upgrade(move |socket| handle_socket(socket, state))
 }
 
 /// One client, start to finish.
@@ -98,16 +136,22 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
             return;
         }
     };
-    if state.cfg.auth_token.is_some() && token != state.cfg.auth_token {
-        let _ = sink
-            .send(Message::Text(
-                json(&HostMsg::Error {
-                    message: "bad or missing token".into(),
-                })
-                .into(),
-            ))
-            .await;
-        return;
+    // The token is mandatory whenever one is configured, which the application
+    // always does. Compared in constant time so a wrong guess does not leak how
+    // much of it was right.
+    if let Some(expected) = &state.cfg.auth_token {
+        if !auth::token_matches(expected, token.as_deref()) {
+            state.stats.rejected_auth.fetch_add(1, Ordering::Relaxed);
+            let _ = sink
+                .send(Message::Text(
+                    json(&HostMsg::Error {
+                        message: "bad or missing token".into(),
+                    })
+                    .into(),
+                ))
+                .await;
+            return;
+        }
     }
 
     // ---- 2. peer connection and offer -----------------------------------
@@ -210,7 +254,8 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
         loop {
             match frames.recv().await {
                 Ok(s) => {
-                    if session_rx.write_sample(&s).await.is_err() {
+                    if let Err(e) = session_rx.write_sample(&s).await {
+                        log::warn!("media task exiting: write_sample failed: {e}");
                         break;
                     }
                 }

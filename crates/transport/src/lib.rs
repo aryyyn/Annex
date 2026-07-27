@@ -25,6 +25,7 @@
 //! permanently growing latency, which is far worse to use. See
 //! [`Server::stats`] for whether that is happening.
 
+pub mod auth;
 pub mod session;
 pub mod signaling;
 
@@ -67,6 +68,12 @@ pub struct Stats {
     /// Set when a client's decoder loses sync and asks for a fresh IDR. Wire
     /// this to `Encoder::request_keyframe`.
     pub keyframe_requests: AtomicU64,
+    /// Failed token handshakes. A non-zero value on a home network is worth
+    /// noticing: something is probing the port.
+    pub rejected_auth: AtomicU64,
+    /// Samples produced while nobody was subscribed. Expected when idle, but a
+    /// high count with a client connected means the fan-out is broken.
+    pub broadcast_no_receiver: AtomicU64,
 }
 
 /// Shared state every WebSocket connection needs.
@@ -135,7 +142,10 @@ impl Server {
                     .fetch_add(n as u64, Ordering::Relaxed);
             }
             Err(_) => {
-                // No subscribers. Not an error: nobody is connected yet.
+                self.state
+                    .stats
+                    .broadcast_no_receiver
+                    .fetch_add(1, Ordering::Relaxed);
             }
         }
     }
@@ -163,6 +173,40 @@ impl Server {
             }
         }
         want
+    }
+
+    /// Recommends a bitrate given what the clients are reporting.
+    ///
+    /// # A deliberately conservative controller
+    ///
+    /// Additive increase, multiplicative decrease, the same shape TCP uses.
+    /// Losing packets means the link is already saturated, so the response has
+    /// to be immediate and large; probing upward has no such urgency, so it
+    /// creeps. Reacting slowly to loss would keep the queue full, and a full
+    /// queue is latency, which is the one thing this project cannot spend.
+    ///
+    /// Driven by the receiver's own reported loss rather than by a bandwidth
+    /// estimate, because loss is what the client actually observes and it needs
+    /// no agreement about units.
+    pub fn recommended_bitrate_kbps(&self, current: u32, ceiling: u32) -> u32 {
+        let worst = {
+            let mut worst = 0u8;
+            if let Ok(sessions) = self.state.sessions.try_lock() {
+                for s in sessions.iter() {
+                    worst = worst.max(s.take_loss_pct());
+                }
+            }
+            worst
+        };
+
+        let floor = ceiling / 10;
+        match worst {
+            // Anything above a couple of percent is real congestion, not noise.
+            l if l >= 10 => (current * 6 / 10).max(floor),
+            l if l >= 3 => (current * 85 / 100).max(floor),
+            // Clean. Creep back toward the ceiling.
+            _ => (current + ceiling / 50).min(ceiling),
+        }
     }
 
     pub fn stats(&self) -> &Stats {

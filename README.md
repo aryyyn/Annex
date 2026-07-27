@@ -172,10 +172,37 @@ a Developer ID instead, so Gatekeeper launches it without warnings. Notarization
 automated malware scan and does not inspect for private-API use, which is how DeskPad,
 BetterDummy, BetterDisplay and SimpleDisplay all ship.
 
+## Security
+
+Annex streams your desktop, so the threat is not a stolen session key. It is someone watching
+your screen. Audited 27 July 2026; three findings, all fixed and verified against live
+attacks.
+
+- **Every launch generates a fresh 128-bit token** from the OS CSPRNG, and the handshake
+  requires it. It reaches only the person at the keyboard, via the URL, the QR code, or the
+  menu bar. Without this, anyone on your network who opened the URL could watch.
+- **`Origin` is checked on the WebSocket.** WebSockets are exempt from the same-origin
+  policy, so without this a page you merely *visited* could open a socket to Annex and
+  receive your screen. A forged origin gets **403**.
+- **`Host` must be a literal IP or localhost**, which closes DNS rebinding, where an attacker
+  points their domain at your machine so their page's origin is genuinely theirs. Gets **421**.
+
+Also: constant-time token comparison, a ceiling of 4 concurrent clients, a 64 KB cap on
+signalling messages, and rejected handshakes are counted so probing is visible. All checks
+run before the WebSocket upgrade, so a refusal costs an attacker an HTTP error rather than a
+live peer connection.
+
+WebRTC media is always encrypted with DTLS-SRTP. Signalling is plain `ws://` on the LAN by
+deliberate choice: it carries no media, and reading it does not help you decrypt anything.
+
+Residual risks are listed in §11.4 of the design document, the notable one being that the
+token rides in the URL query string so a QR code can carry it, and therefore lands in the
+client's browser history. That is why it is regenerated at every launch.
+
 ## Scope
 
 LAN only, by design. No STUN, no TURN, no relay servers, no account, and no data leaving
-your network. WebRTC media is always encrypted with DTLS-SRTP.
+your network.
 
 Not in v1: audio forwarding, internet or NAT traversal, the reverse direction (Windows host
 to Mac client), and multi-client fan-out.

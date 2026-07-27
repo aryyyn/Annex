@@ -9,6 +9,7 @@ repository.workspace   = true
 authors.workspace      = true
 
 [dependencies]
+bytes = "1.12.1"
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]

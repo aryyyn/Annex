@@ -40,6 +40,8 @@ pub struct Options {
     /// Print the QR code to the terminal too, for when the menu bar is not
     /// convenient.
     pub print_qr: bool,
+    /// Ceiling on simultaneous viewers.
+    pub max_clients: u64,
 }
 
 impl Default for Options {
@@ -50,6 +52,7 @@ impl Default for Options {
             fps: 60,
             bitrate_kbps: 12_000,
             print_qr: true,
+            max_clients: 4,
         }
     }
 }
@@ -99,10 +102,17 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
         .enable_all()
         .build()?;
 
+    // A fresh secret every launch. Without it, anyone who can reach the port
+    // watches your screen, and the port is open to the whole local network.
+    // The token only ever reaches the person at the keyboard, through the
+    // printed URL, the QR code, or the menu bar.
+    let token = annex_transport::auth::generate_token();
+
     let server = Arc::new(rt.block_on(Server::bind(RtcConfig {
         bind_addr: format!("0.0.0.0:{}", opts.port).parse()?,
-        auth_token: None,
+        auth_token: Some(token),
         allow_input: false,
+        max_clients: opts.max_clients,
         width,
         height,
         fps: opts.fps,
@@ -111,6 +121,8 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
     let url = server.connect_url();
     println!("  open on the other machine:\n");
     println!("      {url}\n");
+    println!("  That URL carries a one-time access token. Anyone on this network");
+    println!("  who has it can see this screen, so share it deliberately.\n");
 
     if opts.print_qr {
         if let Some(qr) = crate::icon::qr_text(&url) {
@@ -186,6 +198,8 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
     let mut last_frames = 0u64;
     let mut last_at = Instant::now();
     let mut fps_out = 0u64;
+    let mut bitrate = opts.bitrate_kbps;
+    let ceiling = opts.bitrate_kbps;
 
     let initial = tray::Status {
         url: url.clone(),
@@ -205,6 +219,18 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
                 fps_out = ((frames - last_frames) as f64 / dt.as_secs_f64()).round() as u64;
                 last_frames = frames;
                 last_at = Instant::now();
+
+                // Adapt to what the clients are actually receiving. Ignoring
+                // their reported loss and continuing to push the configured
+                // bitrate keeps the network queue full, and a full queue is
+                // latency, which is the one thing this cannot spend.
+                let want = status_server.recommended_bitrate_kbps(bitrate, ceiling);
+                // Only act on a meaningful change, so the encoder is not
+                // reconfigured every second for a rounding difference.
+                if want.abs_diff(bitrate) * 20 > ceiling && status_encoder.set_bitrate(want).is_ok()
+                {
+                    bitrate = want;
+                }
             }
             tray::Status {
                 url: status_server.connect_url(),

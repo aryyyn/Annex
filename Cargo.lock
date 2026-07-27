@@ -80,6 +80,7 @@ dependencies = [
 name = "annex-core"
 version = "0.1.0"
 dependencies = [
+ "bytes",
  "serde",
  "serde_json",
 ]
@@ -132,9 +133,13 @@ version = "0.1.0"
 dependencies = [
  "annex-core",
  "axum",
+ "bytes",
  "futures-util",
+ "getrandom 0.3.4",
+ "log",
  "serde",
  "serde_json",
+ "subtle",
  "tokio",
  "webrtc",
 ]

@@ -5,6 +5,7 @@
 //! into VideoToolbox, so they never cross this boundary and never touch the
 //! CPU. Only compressed bytes reach this crate.
 
+use bytes::Bytes;
 use std::time::Duration;
 
 /// Presentation timestamp in microseconds on the capture clock.
@@ -15,9 +16,17 @@ pub type Timestamp = i64;
 /// `data` is Annex-B: NAL units separated by start codes. Keyframes must carry
 /// their SPS and PPS in band, otherwise a client joining mid-stream has nothing
 /// to initialise its decoder with.
+///
+/// # Why `Bytes` and not `Vec<u8>`
+///
+/// Every sample is handed to every connected client. With a `Vec` each of them
+/// takes a full copy, so a 200 KB keyframe at 60 fps and three viewers is tens
+/// of megabytes a second of pure memcpy on the hot path. `Bytes` is reference
+/// counted, so the same allocation is shared and cloning it is an atomic
+/// increment.
 #[derive(Debug, Clone)]
 pub struct EncodedSample {
-    pub data: Vec<u8>,
+    pub data: Bytes,
     pub pts: Timestamp,
     pub dur: Duration,
     pub keyframe: bool,
