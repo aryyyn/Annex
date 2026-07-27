@@ -24,7 +24,7 @@ use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 use objc2_foundation::{MainThreadMarker, NSDate, NSDefaultRunLoopMode, NSRunLoop};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tray_icon::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
+use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
 use tray_icon::{TrayIcon, TrayIconBuilder};
 
 /// What the menu needs to render, refreshed on a timer.
@@ -34,6 +34,10 @@ pub struct Status {
     pub fps_out: u64,
     pub source: String,
     pub resolution: (u32, u32),
+    /// Resolutions offered, as menu labels. Empty when the source is a real
+    /// screen, whose mode is not ours to change.
+    pub modes: Vec<String>,
+    pub current_mode: String,
 }
 
 pub struct Tray {
@@ -45,6 +49,9 @@ pub struct Tray {
     id_open: tray_icon::menu::MenuId,
     id_qr: tray_icon::menu::MenuId,
     id_quit: tray_icon::menu::MenuId,
+    /// One entry per offered resolution, in the order they were listed, so a
+    /// click maps straight back to an index.
+    mode_items: Vec<(tray_icon::menu::MenuId, CheckMenuItem)>,
     url: String,
 }
 
@@ -67,6 +74,20 @@ impl Tray {
         );
         let item_clients = MenuItem::new("No clients connected", false, None);
         let item_url = MenuItem::new(&initial.url, false, None);
+
+        // Resolution submenu, only when the source is a display we own.
+        let mut mode_items = Vec::new();
+        if !initial.modes.is_empty() {
+            let submenu = Submenu::new("Resolution", true);
+            for label in &initial.modes {
+                let checked = *label == initial.current_mode;
+                let item = CheckMenuItem::new(label, true, checked, None);
+                submenu.append(&item)?;
+                mode_items.push((item.id().clone(), item));
+            }
+            menu.append(&PredefinedMenuItem::separator())?;
+            menu.append(&submenu)?;
+        }
 
         let item_copy = MenuItem::new("Copy URL", true, None);
         let item_open = MenuItem::new("Open in browser", true, None);
@@ -101,6 +122,7 @@ impl Tray {
             id_open: item_open.id().clone(),
             id_qr: item_qr.id().clone(),
             id_quit: item_quit.id().clone(),
+            mode_items,
             url: initial.url.clone(),
         })
     }
@@ -119,6 +141,11 @@ impl Tray {
             self.item_url.set_text(&s.url);
             self.url = s.url.clone();
         }
+        // Keep the tick against whichever resolution is live, including after
+        // a change the user did not initiate.
+        for (label, (_, item)) in s.modes.iter().zip(self.mode_items.iter()) {
+            item.set_checked(*label == s.current_mode);
+        }
     }
 }
 
@@ -126,8 +153,18 @@ impl Tray {
 ///
 /// `poll` is called about twice a second on the main thread to refresh the
 /// menu, so it must be cheap and must not block.
-pub fn run<F>(initial: Status, mut poll: F, running: Arc<AtomicBool>)
-where
+/// Runs the menu bar app. Blocks until the user quits.
+///
+/// `requested_mode` is how a resolution click reaches the pipeline: the menu
+/// records an index and the caller's `poll` acts on it. Menu events arrive on
+/// this thread, but rebuilding capture and encode is not something to do from
+/// inside an event handler, so the two are decoupled by a slot.
+pub fn run<F>(
+    initial: Status,
+    mut poll: F,
+    running: Arc<AtomicBool>,
+    requested_mode: Arc<std::sync::Mutex<Option<usize>>>,
+) where
     F: FnMut() -> Status + 'static,
 {
     let Some(mtm) = MainThreadMarker::new() else {
@@ -172,6 +209,10 @@ where
                 let _ = std::process::Command::new("open").arg(&tray.url).status();
             } else if event.id == tray.id_qr {
                 show_qr(&tray.url);
+            } else if let Some(idx) = tray.mode_items.iter().position(|(id, _)| *id == event.id) {
+                if let Ok(mut slot) = requested_mode.lock() {
+                    *slot = Some(idx);
+                }
             }
         }
 

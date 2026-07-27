@@ -25,10 +25,87 @@ use annex_capture::{CaptureConfig, Capturer};
 use annex_core::{Codec, EncoderConfig, PixFmt, VirtualDisplayConfig};
 use annex_encoder::Encoder;
 use annex_transport::{RtcConfig, Server};
+use annex_virtual_display::mode::DisplayMode;
 use annex_virtual_display::VirtualDisplay;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+/// Capture and encode, which are the two stages tied to a specific resolution.
+///
+/// Bundled together because they cannot be changed independently: a
+/// `VTCompressionSession` is created at a fixed size, and `SCStream` is
+/// configured with one. Changing resolution means replacing both, while the
+/// display, the server and every connected client survive untouched.
+struct Pipeline {
+    capturer: Capturer,
+    encoder: Arc<Encoder>,
+}
+
+impl Pipeline {
+    fn start(
+        display_id: u32,
+        width: u32,
+        height: u32,
+        fps: u32,
+        bitrate_kbps: u32,
+        server: Arc<annex_transport::Server>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let server_enc = Arc::clone(&server);
+        let encoder = Arc::new(Encoder::new(
+            EncoderConfig {
+                width,
+                height,
+                fps,
+                bitrate_kbps,
+                codec: Codec::H264,
+                // Long on purpose. Keyframes are requested on demand when a
+                // client connects or reports picture loss; unforced ones only
+                // waste bitrate.
+                keyframe_interval: 240,
+            },
+            Box::new(move |sample| server_enc.broadcast(sample)),
+        )?);
+
+        let enc_sink = Arc::clone(&encoder);
+        let server_cap = Arc::clone(&server);
+        let mut first = true;
+
+        let capturer = Capturer::start(
+            CaptureConfig {
+                display_id,
+                fps,
+                pixel_format: PixFmt::Nv12,
+                size: None,
+                scale: 1,
+                show_cursor: true,
+            },
+            Box::new(move |frame| {
+                // A client that just connected has no reference frame, and one
+                // that sent a PLI lost sync. Either way the next thing it needs
+                // is an IDR, and `take_keyframe_request` is a one-shot so
+                // exactly one is forced per request.
+                let force = first || server_cap.take_keyframe_request();
+                first = false;
+                let r = if force {
+                    enc_sink.encode_keyframe(&frame, frame.pts_us)
+                } else {
+                    enc_sink.encode(&frame, frame.pts_us)
+                };
+                if let Err(e) = r {
+                    eprintln!("  encode error: {e}");
+                }
+            }),
+        )?;
+
+        Ok(Self { capturer, encoder })
+    }
+
+    fn stop(self) {
+        self.capturer.stop();
+        self.encoder.flush();
+    }
+}
 
 pub struct Options {
     /// Extend the desktop with a virtual display, rather than mirroring an
@@ -90,9 +167,8 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
         (id, "this screen".to_string())
     };
 
-    // Ask ScreenCaptureKit what the display actually is, rather than assuming.
-    // For the virtual display these currently differ from what we requested,
-    // because the mode we apply is not honoured yet.
+    // Ask ScreenCaptureKit what the display actually is rather than assuming,
+    // since the mode finally selected may not be the one requested verbatim.
     let (width, height) = annex_capture::list_displays()?
         .into_iter()
         .find(|(id, _, _)| *id == display_id)
@@ -113,8 +189,23 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
     // printed URL, the QR code, or the menu bar.
     let token = annex_transport::auth::generate_token();
 
+    // Bind to the LAN interface rather than every interface.
+    //
+    // `0.0.0.0` also listens on a VPN adapter, a hotspot, and anything else
+    // that appears later, which quietly widens who can reach the port well
+    // beyond the local network the design scopes itself to. Falling back to
+    // `0.0.0.0` when the LAN address cannot be determined keeps a machine with
+    // unusual networking working, at the cost of the narrower exposure.
+    let bind_ip = match annex_transport::lan_ip() {
+        Some(ip) => ip.to_string(),
+        None => {
+            println!("  note        could not determine the LAN address, binding all interfaces");
+            "0.0.0.0".to_string()
+        }
+    };
+
     let server = Arc::new(rt.block_on(Server::bind(RtcConfig {
-        bind_addr: format!("0.0.0.0:{}", opts.port).parse()?,
+        bind_addr: format!("{bind_ip}:{}", opts.port).parse()?,
         auth_token: Some(token),
         allow_input: false,
         max_clients: opts.max_clients,
@@ -135,54 +226,26 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // ---- encoder ----------------------------------------------------------
-    let server_enc = Arc::clone(&server);
-    let encoder = Arc::new(Encoder::new(
-        EncoderConfig {
-            width,
-            height,
-            fps: opts.fps,
-            bitrate_kbps: opts.bitrate_kbps,
-            codec: Codec::H264,
-            // Long on purpose. Keyframes are requested on demand when a client
-            // connects or reports picture loss; unforced ones only waste
-            // bitrate.
-            keyframe_interval: 240,
-        },
-        Box::new(move |sample| server_enc.broadcast(sample)),
+    // ---- capture and encode ----------------------------------------------
+    //
+    // Creating the display only establishes what it *can* do: macOS then picks
+    // its own default mode, which is 1920x1080 whatever ceiling was set. The
+    // requested size has to be selected explicitly.
+    if let Some(vd) = &vd {
+        if let Some(m) = vd.set_mode(width, height) {
+            println!("  mode        {}", m.label());
+        }
+    }
+    let (width, height) = current_size(display_id).unwrap_or((width, height));
+
+    let mut pipeline = Some(Pipeline::start(
+        display_id,
+        width,
+        height,
+        opts.fps,
+        opts.bitrate_kbps,
+        Arc::clone(&server),
     )?);
-
-    // ---- capture ----------------------------------------------------------
-    let enc_sink = Arc::clone(&encoder);
-    let server_cap = Arc::clone(&server);
-    let mut first = true;
-
-    let capturer = Capturer::start(
-        CaptureConfig {
-            display_id,
-            fps: opts.fps,
-            pixel_format: PixFmt::Nv12,
-            size: None,
-            scale: 1,
-            show_cursor: true,
-        },
-        Box::new(move |frame| {
-            // A client that just connected has no reference frame, and one that
-            // sent a PLI lost sync. Either way the next thing it needs is an
-            // IDR, and `take_keyframe_request` is a one-shot so exactly one is
-            // forced per request.
-            let force = first || server_cap.take_keyframe_request();
-            first = false;
-            let r = if force {
-                enc_sink.encode_keyframe(&frame, frame.pts_us)
-            } else {
-                enc_sink.encode(&frame, frame.pts_us)
-            };
-            if let Err(e) = r {
-                eprintln!("  encode error: {e}");
-            }
-        }),
-    )?;
 
     println!("  running. Use the menu bar icon to quit.\n");
     if opts.extend {
@@ -199,29 +262,87 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let status_server = Arc::clone(&server);
-    let status_encoder = Arc::clone(&encoder);
     let mut last_frames = 0u64;
     let mut last_at = Instant::now();
     let mut fps_out = 0u64;
     let mut bitrate = opts.bitrate_kbps;
     let ceiling = opts.bitrate_kbps;
+    let mut size = (width, height);
+
+    // Only a virtual display can be resized: changing a real monitor's mode
+    // out from under its owner would be rude and surprising.
+    let offered: Vec<DisplayMode> = match &vd {
+        Some(v) => v
+            .modes()
+            .into_iter()
+            // Below this the second screen stops being useful for anything.
+            .filter(|m| m.width >= 1024)
+            .collect(),
+        None => Vec::new(),
+    };
 
     let initial = tray::Status {
         url: url.clone(),
         clients: 0,
         fps_out: 0,
         source: source.clone(),
-        resolution: (width, height),
+        resolution: size,
+        modes: offered.iter().map(|m| m.label()).collect(),
+        current_mode: current_size(display_id)
+            .map(|(w, h)| format!("{w} x {h}"))
+            .unwrap_or_default(),
     };
+
+    let requested_mode = Arc::new(std::sync::Mutex::new(None::<usize>));
+    let requested_for_ui = Arc::clone(&requested_mode);
 
     tray::run(
         initial,
         move || {
-            let frames = status_encoder.stats().frames_out;
+            // ---- a resolution change, if the user picked one ---------------
+            //
+            // The display, the server and every connected peer survive this.
+            // Only capture and encode are rebuilt, because both are created at
+            // a fixed size. Clients see new SPS/PPS followed by an IDR, which
+            // browsers handle as an in-stream resolution change.
+            if let Some(idx) = requested_for_ui.lock().ok().and_then(|mut r| r.take()) {
+                if let (Some(m), Some(_)) = (offered.get(idx), vd.as_ref()) {
+                    if let Some(p) = pipeline.take() {
+                        p.stop();
+                    }
+                    if let Some(v) = vd.as_ref() {
+                        v.set_mode(m.width, m.height);
+                    }
+                    // Ask the display what it settled on rather than assuming
+                    // it honoured the request exactly.
+                    size = current_size(display_id).unwrap_or((m.width, m.height));
+                    match Pipeline::start(
+                        display_id,
+                        size.0,
+                        size.1,
+                        opts.fps,
+                        bitrate,
+                        Arc::clone(&status_server),
+                    ) {
+                        Ok(p) => {
+                            println!("  resolution changed to {}x{}", size.0, size.1);
+                            pipeline = Some(p);
+                        }
+                        Err(e) => eprintln!("  could not restart capture: {e}"),
+                    }
+                }
+            }
+
+            // ---- status and adaptive bitrate ------------------------------
+            let frames = pipeline
+                .as_ref()
+                .map(|p| p.encoder.stats().frames_out)
+                .unwrap_or(0);
             let dt = last_at.elapsed();
             // Only recompute once a second, otherwise the reading is noise.
             if dt >= Duration::from_secs(1) {
-                fps_out = ((frames - last_frames) as f64 / dt.as_secs_f64()).round() as u64;
+                fps_out =
+                    ((frames.saturating_sub(last_frames)) as f64 / dt.as_secs_f64()).round() as u64;
                 last_frames = frames;
                 last_at = Instant::now();
 
@@ -232,35 +353,43 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
                 let want = status_server.recommended_bitrate_kbps(bitrate, ceiling);
                 // Only act on a meaningful change, so the encoder is not
                 // reconfigured every second for a rounding difference.
-                if want.abs_diff(bitrate) * 20 > ceiling && status_encoder.set_bitrate(want).is_ok()
-                {
-                    bitrate = want;
+                if want.abs_diff(bitrate) * 20 > ceiling {
+                    if let Some(p) = pipeline.as_ref() {
+                        if p.encoder.set_bitrate(want).is_ok() {
+                            bitrate = want;
+                        }
+                    }
                 }
             }
+
             tray::Status {
                 url: status_server.connect_url(),
                 clients: status_server.stats().clients_now.load(Ordering::Relaxed),
                 fps_out,
                 source: source.clone(),
-                resolution: (width, height),
+                resolution: size,
+                modes: offered.iter().map(|m| m.label()).collect(),
+                current_mode: format!("{} x {}", size.0, size.1),
             }
         },
         Arc::clone(&running),
+        requested_mode,
     );
 
     // ---- unwind in order --------------------------------------------------
     println!("  stopping");
-    capturer.stop();
-    encoder.flush();
     rt.block_on(async {
         if let Ok(s) = Arc::try_unwrap(server) {
             s.shutdown().await;
         }
     });
-    // Explicit for emphasis: this is what removes the monitor.
-    drop(vd);
     println!("  done");
     Ok(())
+}
+
+/// The display's current logical size.
+fn current_size(id: u32) -> Option<(u32, u32)> {
+    annex_virtual_display::mode::current(id).map(|m| (m.width, m.height))
 }
 
 /// Tells the user what to do when the Screen Recording grant is missing.

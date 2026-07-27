@@ -26,8 +26,10 @@ use objc2_core_foundation::{CGPoint, CGSize};
 use objc2_foundation::NSString;
 
 pub mod ffi;
+pub mod mode;
 
 pub use ffi::{availability, is_available};
+pub use mode::DisplayMode;
 
 #[derive(Debug)]
 pub enum VdError {
@@ -208,6 +210,29 @@ impl VirtualDisplay {
     /// knows which display to filter its stream to.
     pub fn display_id(&self) -> u32 {
         self.display_id
+    }
+
+    /// Every resolution this display offers, largest first.
+    ///
+    /// macOS synthesises this ladder from the pixel ceiling in the descriptor,
+    /// so it is derived from [`VirtualDisplayConfig::width`] and `height`
+    /// rather than listed by us.
+    pub fn modes(&self) -> Vec<mode::DisplayMode> {
+        mode::available(self.display_id)
+    }
+
+    /// The resolution the display is running now.
+    pub fn current_mode(&self) -> Option<mode::DisplayMode> {
+        mode::current(self.display_id)
+    }
+
+    /// Switches to the closest available mode.
+    ///
+    /// Necessary because creating the display only establishes what it *can*
+    /// do. macOS then picks its own default, which is 1920x1080 regardless of
+    /// the ceiling, so the requested size has to be selected explicitly.
+    pub fn set_mode(&self, width: u32, height: u32) -> Option<mode::DisplayMode> {
+        mode::set_mode(self.display_id, width, height)
     }
 }
 

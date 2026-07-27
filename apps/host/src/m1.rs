@@ -91,7 +91,9 @@ pub fn run(
     // run reports DisplayNotFound for a display that plainly exists.
     // Points versus backing pixels. This is the only API that distinguishes
     // them, and it decides whether capturing at 2x is worth 4x the bandwidth.
-    if let Some((pw, ph, xw, xh)) = crate::displays::mode_geometry(display_id) {
+    if let Some((pw, ph, xw, xh)) = annex_virtual_display::mode::current(display_id)
+        .map(|m| (m.width, m.height, m.pixel_width, m.pixel_height))
+    {
         let retina = xw == pw * 2 && xh == ph * 2;
         println!(
             "      current mode: {pw}x{ph} points, {xw}x{xh} backing pixels  ({})",
@@ -100,6 +102,21 @@ pub fn run(
             } else {
                 "1x, capture at scale 1"
             }
+        );
+    }
+
+    // Creating the display only sets the ceiling; macOS then picks its own
+    // default mode, which is 1920x1080 whatever ceiling you gave it. Select
+    // the size we actually asked for.
+    match vd.set_mode(vd_cfg.width, vd_cfg.height) {
+        Some(m) => println!("      selected mode {}", m.label()),
+        None => println!("      could not select a mode"),
+    }
+    println!("      offers {} modes", vd.modes().len());
+    if let Some(m) = vd.current_mode() {
+        println!(
+            "      AFTER: {}x{} points, {}x{} backing pixels",
+            m.width, m.height, m.pixel_width, m.pixel_height
         );
     }
 

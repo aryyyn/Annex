@@ -178,3 +178,120 @@ mod tests {
         assert!(!host_allowed(None));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Failed-handshake lockout
+// ---------------------------------------------------------------------------
+
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+/// Refuses handshakes for a while after repeated failures.
+///
+/// # Why this exists when the token is already 128 bits
+///
+/// Not to stop the guessing itself: 128 bits is not brute-forceable and the
+/// connection ceiling already bounds throughput. It is to make a sustained
+/// attempt *cost* something and to make it visible, rather than letting a
+/// scanner hammer the port indefinitely at no charge while looking exactly
+/// like normal traffic.
+///
+/// Deliberately global rather than per-address. Per-source counting sounds
+/// fairer but is trivially defeated by rotating source addresses on the same
+/// LAN, and the failure mode of a global lock is mild: a legitimate user who
+/// mistypes a token a few times waits a few seconds.
+#[derive(Debug)]
+pub struct Lockout {
+    failures: AtomicU32,
+    /// Unix seconds until which handshakes are refused. Stored as an integer
+    /// rather than an `Instant` so it can live in an atomic.
+    locked_until: AtomicU64,
+    threshold: u32,
+    duration: Duration,
+}
+
+impl Default for Lockout {
+    fn default() -> Self {
+        Self::new(5, Duration::from_secs(15))
+    }
+}
+
+impl Lockout {
+    pub fn new(threshold: u32, duration: Duration) -> Self {
+        Self {
+            failures: AtomicU32::new(0),
+            locked_until: AtomicU64::new(0),
+            threshold,
+            duration,
+        }
+    }
+
+    fn now_secs() -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    }
+
+    /// Whether handshakes are currently refused.
+    pub fn is_locked(&self) -> bool {
+        Self::now_secs() < self.locked_until.load(Ordering::Relaxed)
+    }
+
+    /// Seconds remaining, for a message worth reading.
+    pub fn remaining_secs(&self) -> u64 {
+        self.locked_until
+            .load(Ordering::Relaxed)
+            .saturating_sub(Self::now_secs())
+    }
+
+    /// Records a failure, locking once the threshold is reached.
+    pub fn record_failure(&self) {
+        let n = self.failures.fetch_add(1, Ordering::Relaxed) + 1;
+        if n >= self.threshold {
+            self.failures.store(0, Ordering::Relaxed);
+            self.locked_until.store(
+                Self::now_secs() + self.duration.as_secs(),
+                Ordering::Relaxed,
+            );
+        }
+    }
+
+    /// Clears the count after a genuine success, so an occasional typo across
+    /// a long session never accumulates into a lock.
+    pub fn record_success(&self) {
+        self.failures.store(0, Ordering::Relaxed);
+    }
+}
+
+/// Kept so `Instant` stays referenced if the implementation moves back to it.
+#[allow(dead_code)]
+type UnusedInstant = Instant;
+
+#[cfg(test)]
+mod lockout_tests {
+    use super::*;
+
+    #[test]
+    fn locks_after_the_threshold_and_not_before() {
+        let l = Lockout::new(3, Duration::from_secs(30));
+        l.record_failure();
+        l.record_failure();
+        assert!(!l.is_locked(), "must not lock before the threshold");
+        l.record_failure();
+        assert!(l.is_locked(), "must lock on the third failure");
+        assert!(l.remaining_secs() > 0);
+    }
+
+    #[test]
+    fn success_clears_the_count() {
+        let l = Lockout::new(3, Duration::from_secs(30));
+        l.record_failure();
+        l.record_failure();
+        // A legitimate client getting in must not leave the door half-closed.
+        l.record_success();
+        l.record_failure();
+        l.record_failure();
+        assert!(!l.is_locked(), "two failures after a success must not lock");
+    }
+}

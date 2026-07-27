@@ -87,6 +87,8 @@ pub struct AppState {
     /// Set when any client asks for a keyframe.
     pub want_keyframe: Arc<std::sync::atomic::AtomicBool>,
     pub sessions: Arc<Mutex<Vec<Arc<Session>>>>,
+    /// Slows down anything hammering the port with bad tokens.
+    pub lockout: auth::Lockout,
 }
 
 /// The HTTP and WebSocket server.
@@ -110,6 +112,7 @@ impl Server {
             stats: Arc::new(Stats::default()),
             want_keyframe: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             sessions: Arc::new(Mutex::new(Vec::new())),
+            lockout: auth::Lockout::default(),
         });
 
         let listener = tokio::net::TcpListener::bind(cfg.bind_addr)

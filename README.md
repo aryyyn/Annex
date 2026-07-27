@@ -177,7 +177,7 @@ already loaded into the process.
 | **M3** | WebRTC to browser | **Done.** Chrome connects, negotiates H.264, and decodes frames over the LAN |
 | **M4** | Extended display E2E | **Done.** `annex` creates a virtual display and streams it |
 | **M5** | Interactive input | DataChannel input, `CGEvent` injection |
-| **M6** | Polish | **Partly done:** menu bar UI and QR code work. Auth token, resolution picker and HEVC remain |
+| **M6** | Polish | **Mostly done:** menu bar UI, QR code, auth token and resolution picker all work. HEVC remains |
 | **M7** | Native client | winit and wgpu app with hardware decode for lowest latency |
 
 M3 deliberately uses the real main display, so the streaming half is proven before anything

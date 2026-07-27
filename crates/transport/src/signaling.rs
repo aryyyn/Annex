@@ -94,6 +94,19 @@ async fn ws_upgrade(
         return (StatusCode::SERVICE_UNAVAILABLE, "too many clients").into_response();
     }
 
+    // Refuse outright while locked out, so a scanner spends its time waiting
+    // rather than guessing.
+    if state.lockout.is_locked() {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            format!(
+                "too many failed attempts, try again in {}s",
+                state.lockout.remaining_secs()
+            ),
+        )
+            .into_response();
+    }
+
     ws
         // An SDP is a few kilobytes. Anything near a megabyte is an attempt to
         // exhaust memory, not a real client.
@@ -142,6 +155,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     if let Some(expected) = &state.cfg.auth_token {
         if !auth::token_matches(expected, token.as_deref()) {
             state.stats.rejected_auth.fetch_add(1, Ordering::Relaxed);
+            state.lockout.record_failure();
             let _ = sink
                 .send(Message::Text(
                     json(&HostMsg::Error {
@@ -153,6 +167,8 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
             return;
         }
     }
+
+    state.lockout.record_success();
 
     // ---- 2. peer connection and offer -----------------------------------
     let session = match Session::new(&state.cfg).await {

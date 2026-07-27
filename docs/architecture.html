@@ -671,15 +671,20 @@ impl Pipeline {
     <tr><td>Jitter buffer + decode (browser)</td><td>5–16 ms</td><td>low-latency playback, small jitter buffer</td></tr>
     <tr><td><b>Total (glass-to-glass)</b></td><td><b>~30–60 ms</b></td><td>Ethernet/USB-tether pushes toward the low end</td></tr>
   </table>
-  <div class="callout warn"><span class="lbl">Measured 27 July 2026, macOS 26.5: the virtual display is 1x, not Retina.</span>
-  <code>CGDisplayModeGetPixelWidth</code> equals <code>CGDisplayModeGetWidth</code> for the virtual display, so there is
-  <b>no HiDPI backing store</b>. That holds with <code>hiDPI</code> set to 0 or 1, and with a mode of either 1920x1080 or
-  3840x2160: all four combinations report <b>1920x1080 points and 1920x1080 backing pixels</b>. Two consequences.
-  <b>Capture at scale 1.</b> Requesting a 2x buffer costs four times the pixels and bandwidth and returns a bicubic
-  upscale, differing from an upscaled 1x frame by a mean of 0.85/255, which is resampling noise. And separately, the
-  requested <b>mode dimensions currently have no effect</b>: macOS lands on 1920x1080 whatever we ask for. BetterDummy
-  offers a whole ladder of modes rather than the single one we apply, which is the likely fix and is M6 work
-  (resolution picker). Nothing before M6 depends on it.</p>
+  <div class="callout warn"><span class="lbl">Corrected 27 July 2026. An earlier revision of this document claimed the
+  requested mode had no effect. That was wrong.</span>
+  <code>applySettings:</code> does not choose a resolution: it establishes what the display <i>can</i> do. macOS takes
+  <code>maxPixelsWide</code> and <code>maxPixelsHigh</code> from the descriptor and synthesises a ladder of standard
+  modes up to that ceiling, and the ladder really does follow the request. Ask for 3840x2160 and 3840x2160 appears in
+  <code>CGDisplayCopyAllDisplayModes</code>.
+  <br><br>
+  What it does not do is make that the <b>current</b> mode: macOS picks its own default, which is 1920x1080 whatever
+  ceiling you set. Measuring the current mode and concluding the request was ignored is the wrong inference, and it is
+  the one drawn here first. The fix is one public call, <code>CGDisplaySetDisplayMode</code>, after creation. Verified:
+  requesting 2560x1440 now yields 2560x1440 points and ScreenCaptureKit captures at that size.
+  <br><br>
+  The HiDPI half of the original finding stands. No mode in the synthesised ladder has a backing store larger than its
+  logical size, so the virtual display is 1x and <b>capture should stay at scale 1</b>.</p>
 
   <div class="callout warn"><span class="lbl">Measured 27 July 2026: the frame duration handed to WebRTC must be the
   real one.</span> The receiver advances its RTP clock by <code>duration &times; 90000</code> per sample, and paces
