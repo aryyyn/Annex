@@ -767,7 +767,7 @@ cargo run  -p host
   comfortable with Rust, learning the macOS specifics.</p>
   <table>
     <tr><th>#</th><th>Milestone</th><th>Deliverable / demo</th><th>Rough effort</th></tr>
-    <tr><td><b>M0</b></td><td>Virtual-display spike</td><td>Run a binary → a fake monitor appears in System Settings; drops cleanly on exit.</td><td>1–3 days</td></tr>
+    <tr><td><b>M0</b></td><td>Virtual-display spike <b>(done)</b></td><td>Verified 27 July 2026 on macOS 26.5: display created, visible to public CoreGraphics, removed cleanly with no ghost. See <code>crates/virtual-display</code>.</td><td>done</td></tr>
     <tr><td><b>M1</b></td><td>Capture to disk</td><td>Capture the virtual display via ScreenCaptureKit; save frames/PNG to prove the source works.</td><td>2–4 days</td></tr>
     <tr><td><b>M2</b></td><td>Encode + local verify</td><td>VideoToolbox → H.264; decode locally (or write .h264/.mp4) to confirm a valid low-latency stream.</td><td>3–5 days</td></tr>
     <tr><td><b>M3</b></td><td>WebRTC to browser (mirror)</td><td>Stream the <i>main</i> display to a browser full-screen; the whole network path proven end-to-end.</td><td>4–7 days</td></tr>
@@ -804,39 +804,76 @@ cargo run  -p host
 <!-- ============================ 16 ============================ -->
 <section>
   <h1>Appendix A: Reverse-engineered <code>CGVirtualDisplay</code> interface</h1>
-  <div class="callout warn"><span class="lbl">Do not transcribe from memory.</span> Copy the current header from a
-  maintained reference (DeskPad or BetterDummy) and cross-check the two, since field signatures have drifted across macOS
-  versions. This appendix shows the <i>shape</i> so you recognize it, not an authoritative header.</p>
+  <div class="callout ok"><span class="lbl">Verified 27 July 2026 on macOS 26.5.</span> The header below was
+  cross-checked against <b>DeskPad</b> (<code>CGVirtualDisplayPrivate.h</code>) and <b>BetterDummy</b>
+  (<code>Bridging-Header.h</code>, branch <code>opensource</code>), and exercised by the M0 spike, which created and
+  removed a display successfully. Earlier revisions of this appendix were written from memory and were <b>wrong in
+  three places</b>, noted inline. Still copy from the references rather than from here when a macOS release lands.</p>
+
+  <div class="callout warn"><span class="lbl">The two references disagree, and it matters.</span> DeskPad declares
+  <code>initWithWidth:height:refreshRate:</code> as taking <code>NSUInteger</code> (64-bit) and <code>CGFloat</code>.
+  BetterDummy declares <code>unsigned int</code> (32-bit) and <code>double</code>, and backs it with a class dump
+  showing the real ivars: <code>unsigned int _width; unsigned int _height; double _refreshRate;</code>. The ivar
+  layout settles it: <b>32-bit</b>. DeskPad's version happens to work on arm64 because the low half of the register
+  carries any sane resolution, but it is incorrect. <b>Follow BetterDummy.</b></p>
+
 <pre><code>// Private classes living inside CoreGraphics.framework (not in the SDK).
 @interface CGVirtualDisplayMode : NSObject
-- (instancetype)initWithWidth:(uint32_t)w height:(uint32_t)h refreshRate:(double)r;
-@property(readonly) uint32_t width, height;  @property(readonly) double refreshRate;
-@end
-
-@interface CGVirtualDisplayDescriptor : NSObject
-@property(retain) dispatch_queue_t queue;
-@property(copy)   NSString *name;
-@property uint32_t maxPixelsWide, maxPixelsHigh;
-@property CGSize   sizeInMillimeters;                 // physical size → DPI
-@property uint32_t vendorID, productID, serialNum;
-@property(copy)   void (^terminationHandler)(id, id); // Obj-C block
-@end
+@property(readonly, nonatomic) double refreshRate;
+@property(readonly, nonatomic) unsigned int height;
+@property(readonly, nonatomic) unsigned int width;
+- (id)initWithWidth:(unsigned int)w height:(unsigned int)h refreshRate:(double)r;
+@end                                     // ^^^^ CORRECTION 1: 32-bit, not NSUInteger
 
 @interface CGVirtualDisplaySettings : NSObject
-@property(retain) NSArray&lt;CGVirtualDisplayMode *&gt; *modes;
-@property uint32_t hiDPI;        // 1 = Retina backing
-@property uint32_t rotation;
-@end
+@property(nonatomic) unsigned int hiDPI;               // 1 = Retina backing store
+@property(retain, nonatomic) NSArray *modes;
+- (id)init;
+@end            // CORRECTION 2: there is NO `rotation` property. Only these two.
+
+@interface CGVirtualDisplayDescriptor : NSObject
+@property(retain, nonatomic) id queue;                 // dispatch_queue_t
+@property(retain, nonatomic) NSString *name;
+@property(nonatomic) CGPoint whitePoint, redPrimary, greenPrimary, bluePrimary;
+@property(nonatomic) unsigned int maxPixelsHigh, maxPixelsWide;
+@property(nonatomic) CGSize sizeInMillimeters;         // physical size, drives DPI
+@property(nonatomic) unsigned int serialNum, productID, vendorID;
+@property(copy, nonatomic) id terminationHandler;      // Obj-C block
+- (id)init;
+- (id)dispatchQueue;                    // newer alias for the `queue` property
+- (void)setDispatchQueue:(id)arg1;
+@end   // CORRECTION 3: the four colour primaries above were missing entirely.
 
 @interface CGVirtualDisplay : NSObject
-- (instancetype)initWithDescriptor:(CGVirtualDisplayDescriptor *)d;
-- (BOOL)applySettings:(CGVirtualDisplaySettings *)s;
-@property(readonly) CGDirectDisplayID displayID;      // ← feed to ScreenCaptureKit
+@property(readonly, nonatomic) unsigned int displayID;  // feed to ScreenCaptureKit
+@property(readonly, nonatomic) unsigned int hiDPI;
+@property(readonly, nonatomic) NSArray *modes;
+- (id)initWithDescriptor:(id)arg1;
+- (BOOL)applySettings:(id)arg1;
 @end</code></pre>
-  <p><b>Creation recipe (from the Rust <code>virtual-display</code> crate, conceptually):</b> look up each class with
-  <code>AnyClass::get(c"CGVirtualDisplay")</code> → build descriptor (name, dimensions, size_mm, IDs, main queue) →
-  <code>alloc/initWithDescriptor:</code> → build settings (one mode, hiDPI) → <code>applySettings:</code> → read
-  <code>displayID</code>. Retain the object for the session; drop it to remove the monitor.</p>
+
+  <div class="callout"><span class="lbl">The non-obvious part:</span> creating the <code>CGVirtualDisplay</code>
+  object does <b>not</b> make a monitor appear. After <code>initWithDescriptor:</code> the object exists but has no
+  modes, and macOS shows nothing. It is <code>applySettings:</code>, carrying at least one
+  <code>CGVirtualDisplayMode</code>, that attaches the display. Worth knowing before spending an hour wondering why
+  System Settings is unchanged.</p>
+
+  <p><b>Creation recipe, as implemented in <code>crates/virtual-display</code>:</b></p>
+  <ol>
+    <li>Resolve all four classes with <code>AnyClass::get</code>. No linker flags are needed: CoreGraphics is already
+        loaded, so there is no link-time symbol to satisfy.</li>
+    <li>Build the descriptor. Set the dispatch queue (a global user-interactive queue works), the name, the pixel
+        ceiling, the physical size, the four colour primaries, and the vendor/product/serial ids.</li>
+    <li><code>alloc</code> then <code>initWithDescriptor:</code>, then release the descriptor.</li>
+    <li>Build one <code>CGVirtualDisplayMode</code> per resolution you want to offer, and put them in an
+        <code>NSArray</code>.</li>
+    <li>Build the settings object, set <code>hiDPI</code> and <code>modes</code>, then call
+        <code>applySettings:</code>. <b>This is the call that makes the monitor appear.</b></li>
+    <li>Read <code>displayID</code> off the display object and hand it to the capture crate.</li>
+  </ol>
+  <p>Retain the display object for the whole session. Dropping it removes the monitor, which is why the Rust wrapper
+  ties removal to <code>Drop</code>: a leaked handle leaves the user with a ghost display they cannot clear without
+  logging out.</p>
 </section>
 
 <!-- ============================ 17 ============================ -->

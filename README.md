@@ -11,9 +11,16 @@ No HDMI. No capture card. No cloud. Both machines just need to be on the same Wi
 The Mac runs a single Rust binary. The second machine opens a URL in its browser.
 
 > [!NOTE]
-> **Status: scaffolded, not implemented.** The workspace, crate boundaries and public API
-> surface are in place, but every function body is a `todo!()`. Nothing runs yet. The first
-> milestone (M0) is a virtual-display spike. See [Roadmap](#roadmap).
+> **Status: M0 done.** The virtual display works. Verified 27 July 2026 on macOS 26.5: a
+> display is created, is visible to public CoreGraphics, and is removed cleanly on drop with
+> no ghost left behind. Everything downstream (capture, encode, transport) is still a
+> `todo!()`. See [Roadmap](#roadmap).
+>
+> ```
+> $ cargo run -p annex-host -- 20
+>   displayID = 10   1920 x 1080   external   vendor 0xF0F0  <-- ours
+>   M0 passed: created, visible, and removed cleanly. No ghost display.
+> ```
 
 ## How it works
 
@@ -83,19 +90,24 @@ named plainly `core` would shadow the built-in `core` crate at every `use core::
 
 ```bash
 rustup toolchain install stable   # rust-toolchain.toml pins the rest
-cargo check --workspace           # builds today: the stubs are std-only
-cargo run -p annex-host           # panics on todo!() until M0 lands
+cargo check --workspace
+cargo run -p annex-host -- 20     # M0: create a display, hold 20s, remove it
 ```
 
-External dependencies are declared in the root `[workspace.dependencies]` but not yet wired
-into any crate, so the workspace resolves offline. Each crate's `Cargo.toml` lists which ones
-to enable at which milestone.
+Only `annex-virtual-display` has external dependencies so far (the `objc2` family). The rest
+of the crates are std-only stubs. Remaining dependency versions are declared in the root
+`[workspace.dependencies]` but not wired into any crate yet, and each crate's `Cargo.toml`
+lists which ones to enable at which milestone.
+
+No special linker flags are needed for the private API. The classes are resolved by name at
+runtime with `AnyClass::get`, so there is no link-time symbol to satisfy: CoreGraphics is
+already loaded into the process.
 
 ## Roadmap
 
 | | Milestone | Deliverable |
 |---|---|---|
-| **M0** | Virtual-display spike | A fake monitor appears in System Settings and drops cleanly on exit |
+| **M0** | Virtual-display spike | **Done.** A fake monitor appears in System Settings and drops cleanly on exit |
 | **M1** | Capture to disk | Capture the virtual display, save frames, prove the source works |
 | **M2** | Encode and verify | VideoToolbox to H.264, decode locally to confirm a valid low-latency stream |
 | **M3** | WebRTC to browser | Stream the *main* display full-screen, proving the whole network path |

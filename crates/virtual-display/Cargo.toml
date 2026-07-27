@@ -10,12 +10,11 @@ authors.workspace      = true
 
 [dependencies]
 annex-core = { workspace = true }
+objc2.workspace = true
+objc2-core-foundation.workspace = true
+objc2-foundation.workspace = true
 
-# M0 wires these in. They stay confined to this crate by design: see rule 3 in
-# CLAUDE.md and section 5.1 of the design doc.
-# [target.'cfg(target_os = "macos")'.dependencies]
-# objc2                 = { workspace = true }
-# objc2-foundation      = { workspace = true }
-# objc2-core-foundation = { workspace = true }
-# block2                = { workspace = true }
-# dispatch2             = { workspace = true }
+# Wired in at M0. These stay confined to this crate by design: see rule 3 in
+# CLAUDE.md and section 5.1 of the design doc. The dispatch queue the descriptor
+# needs comes from one extern "C" in ffi.rs rather than a dispatch2 dependency,
+# since it is handed straight to Objective-C as an opaque pointer.
