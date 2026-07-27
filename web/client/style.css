@@ -53,6 +53,10 @@ html, body {
 /* Hide the cursor over the video: this is a monitor, not a web page. */
 body.streaming { cursor: none; }
 
+/* When input is forwarded the cursor is meaningful again, since it is driving
+   the Mac. Keep it visible so you can see what you are pointing at. */
+body.streaming.interactive { cursor: crosshair; }
+
 #stats {
   position: fixed;
   left: 10px;

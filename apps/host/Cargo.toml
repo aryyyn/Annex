@@ -18,7 +18,7 @@ annex-virtual-display = { workspace = true }
 annex-capture.workspace = true
 annex-encoder.workspace = true
 annex-transport.workspace = true
-annex-input           = { workspace = true }
+annex-input.workspace = true
 png = "0.18.1"
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "net"] }
 ctrlc = "3.5.2"

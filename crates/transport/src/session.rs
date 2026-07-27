@@ -2,7 +2,13 @@
 
 use crate::RtcError;
 use annex_core::protocol::{IceCandidate, Sdp};
-use annex_core::EncodedSample;
+use annex_core::{EncodedSample, InputEvent};
+
+/// Where input events from a client go.
+///
+/// Runs on a webrtc-rs task, so the implementation must hand off rather than
+/// act: `CGEventPost` has to happen on the main thread.
+pub type InputSink = Arc<dyn Fn(InputEvent) + Send + Sync>;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 use std::sync::Arc;
@@ -10,6 +16,7 @@ use std::time::{Duration, SystemTime};
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_H264};
 use webrtc::api::APIBuilder;
+use webrtc::data_channel::data_channel_init::RTCDataChannelInit;
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
 use webrtc::interceptor::registry::Registry;
 use webrtc::media::Sample;
@@ -77,7 +84,7 @@ impl Session {
     /// dependency, and the multi-second candidate gathering that normally
     /// dominates connection setup. It is the single largest simplification in
     /// the design, and it is bought by declaring LAN-only in section 2.2.
-    pub async fn new(cfg: &RtcConfig) -> Result<Self, RtcError> {
+    pub async fn new(cfg: &RtcConfig, input_sink: Option<InputSink>) -> Result<Self, RtcError> {
         let mut media = MediaEngine::default();
         media
             .register_default_codecs()
@@ -151,6 +158,42 @@ impl Session {
                     }
                 }
             });
+        }
+
+        // ---- phase-2 input channel -----------------------------------
+        //
+        // Created only when input is enabled. A channel that exists but
+        // discards what it receives would be a lie to the client and an
+        // invitation to a bug that quietly starts honouring it.
+        if cfg.allow_input {
+            if let Some(sink) = input_sink.clone() {
+                // Unordered and unreliable on purpose. Input is a stream of
+                // fresh state: a mouse position that arrives late is worse
+                // than useless, since a newer one has already superseded it.
+                // Retransmitting it would add latency to deliver a lie.
+                let dc = pc
+                    .create_data_channel(
+                        "input",
+                        Some(RTCDataChannelInit {
+                            ordered: Some(false),
+                            max_retransmits: Some(0),
+                            ..Default::default()
+                        }),
+                    )
+                    .await
+                    .map_err(|e| RtcError::Negotiation(e.to_string()))?;
+
+                dc.on_message(Box::new(move |msg| {
+                    let sink = sink.clone();
+                    Box::pin(async move {
+                        if let Ok(text) = std::str::from_utf8(&msg.data) {
+                            if let Ok(ev) = serde_json::from_str::<InputEvent>(text) {
+                                sink(ev);
+                            }
+                        }
+                    })
+                }));
+            }
         }
 
         Ok(Self {

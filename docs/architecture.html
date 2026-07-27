@@ -749,6 +749,15 @@ impl Pipeline {
     socket and a peer connection.</li>
   </ul>
 
+  <h3>11.3 Input is the one capability that writes</h3>
+  <p>Everything else in Annex is read-only: a client watches. Input lets a remote machine move this Mac's cursor and
+  type on it, so it is gated three times over. It is <b>off unless started with <code>--input</code></b>, it needs the
+  separate <b>Accessibility</b> grant, and it still sits behind the shared token that guards every session. The menu
+  bar states plainly whether it is on, because a capability like this should never be invisible to the person whose
+  machine it is.</p>
+  <p>The DataChannel is created <i>only</i> when input is enabled. A channel that existed but discarded what it
+  received would be a lie to the client and an invitation to a later bug that quietly starts honouring it.</p>
+
   <h3>11.3 Permissions and transport</h3>
   <ul>
     <li><b>Screen Recording permission</b> (TCC): required by ScreenCaptureKit. Without it the stream starts and
@@ -850,7 +859,7 @@ cargo run  -p host
     <tr><td><b>M2</b></td><td>Encode and verify <b>(done)</b></td><td>Verified 27 July 2026: VideoToolbox H.264 Main, Annex-B, zero-copy from capture. ffprobe reports <code>has_b_frames=0</code> and ffmpeg decodes with zero errors. See <code>crates/encoder</code>.</td><td>done</td></tr>
     <tr><td><b>M3</b></td><td>WebRTC to browser <b>(done)</b></td><td>Verified 27 July 2026 with a real headless Chrome doing the actual handshake: connected, codec video/H264, frames decoded at 1440x900. See <code>crates/transport</code>.</td><td>done</td></tr>
     <tr><td><b>M4</b></td><td>Extended display E2E <b>(done)</b></td><td>Verified 27 July 2026: <code>annex</code> creates a virtual display, streams it, drag a window across. 57 fps, no freezes. <b>v1 works.</b></td><td>done</td></tr>
-    <tr><td><b>M5</b></td><td>Interactive input</td><td>DataChannel input → <code>CGEvent</code> injection; mouse/keyboard work on the second screen.</td><td>~1 week</td></tr>
+    <tr><td><b>M5</b></td><td>Interactive input <b>(done, one step unverified)</b></td><td>DataChannel to <code>CGEvent</code>. Delivery verified end to end at 65 events; the final <code>CGEventPost</code> needs the Accessibility grant, which cannot be given programmatically.</td><td>done</td></tr>
     <tr><td><b>M6</b></td><td>Polish <b>(partly done)</b></td><td>Menu bar UI and QR code done. Auth token, resolution picker, multi-client tuning and HEVC remain.</td><td>ongoing</td></tr>
     <tr><td><b>M7</b></td><td>Native Rust client</td><td><code>winit</code>+<code>wgpu</code> Windows app with HW decode for lowest latency.</td><td>1–2 weeks</td></tr>
   </table>

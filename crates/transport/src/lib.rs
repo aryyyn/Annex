@@ -89,6 +89,8 @@ pub struct AppState {
     pub sessions: Arc<Mutex<Vec<Arc<Session>>>>,
     /// Slows down anything hammering the port with bad tokens.
     pub lockout: auth::Lockout,
+    /// Where client input goes, when `allow_input` is set.
+    pub input_sink: Option<session::InputSink>,
 }
 
 /// The HTTP and WebSocket server.
@@ -102,6 +104,18 @@ impl Server {
     /// Binds and starts serving. Returns once the listener is live, so the
     /// caller can print a URL that already works.
     pub async fn bind(cfg: RtcConfig) -> Result<Self, RtcError> {
+        Self::bind_with_input(cfg, None).await
+    }
+
+    /// Binds with a destination for client input.
+    ///
+    /// Separate constructor rather than a field on the config, so that a caller
+    /// who does not want input cannot accidentally end up with it: there is no
+    /// sink to call.
+    pub async fn bind_with_input(
+        cfg: RtcConfig,
+        input_sink: Option<session::InputSink>,
+    ) -> Result<Self, RtcError> {
         // Capacity is deliberately small. If a client cannot keep up it should
         // lag and recover with a keyframe, not accumulate a backlog of stale
         // frames that arrive late and useless.
@@ -113,6 +127,7 @@ impl Server {
             want_keyframe: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             sessions: Arc::new(Mutex::new(Vec::new())),
             lockout: auth::Lockout::default(),
+            input_sink,
         });
 
         let listener = tokio::net::TcpListener::bind(cfg.bind_addr)

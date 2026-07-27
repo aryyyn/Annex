@@ -15,5 +15,5 @@ pub mod protocol;
 pub use config::{Codec, EncoderConfig, HostConfig, PixFmt, VirtualDisplayConfig};
 pub use error::{Error, Result};
 pub use frame::{EncodedSample, Timestamp};
-pub use input::InputEvent;
+pub use input::{InputEvent, KeyMods, MouseButton};
 pub use pipeline::Pipeline;

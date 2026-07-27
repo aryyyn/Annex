@@ -171,7 +171,7 @@ async fn handle_socket(socket: WebSocket, state: Arc<AppState>) {
     state.lockout.record_success();
 
     // ---- 2. peer connection and offer -----------------------------------
-    let session = match Session::new(&state.cfg).await {
+    let session = match Session::new(&state.cfg, state.input_sink.clone()).await {
         Ok(s) => Arc::new(s),
         Err(e) => {
             let _ = sink

@@ -38,6 +38,9 @@ pub struct Status {
     /// screen, whose mode is not ours to change.
     pub modes: Vec<String>,
     pub current_mode: String,
+    /// Whether clients can drive this Mac. Shown because a capability like
+    /// this should never be invisible to the person whose machine it is.
+    pub input_enabled: bool,
 }
 
 pub struct Tray {
@@ -45,6 +48,7 @@ pub struct Tray {
     item_status: MenuItem,
     item_clients: MenuItem,
     item_url: MenuItem,
+    item_input: MenuItem,
     id_copy: tray_icon::menu::MenuId,
     id_open: tray_icon::menu::MenuId,
     id_qr: tray_icon::menu::MenuId,
@@ -73,6 +77,7 @@ impl Tray {
             None,
         );
         let item_clients = MenuItem::new("No clients connected", false, None);
+        let item_input = MenuItem::new(input_line(initial.input_enabled), false, None);
         let item_url = MenuItem::new(&initial.url, false, None);
 
         // Resolution submenu, only when the source is a display we own.
@@ -96,6 +101,7 @@ impl Tray {
 
         menu.append(&item_status)?;
         menu.append(&item_clients)?;
+        menu.append(&item_input)?;
         menu.append(&PredefinedMenuItem::separator())?;
         menu.append(&item_url)?;
         menu.append(&item_copy)?;
@@ -118,6 +124,7 @@ impl Tray {
             item_status,
             item_clients,
             item_url,
+            item_input,
             id_copy: item_copy.id().clone(),
             id_open: item_open.id().clone(),
             id_qr: item_qr.id().clone(),
@@ -137,6 +144,7 @@ impl Tray {
             1 => format!("1 client  ·  {} fps", s.fps_out),
             n => format!("{n} clients  ·  {} fps", s.fps_out),
         });
+        self.item_input.set_text(input_line(s.input_enabled));
         if s.url != self.url {
             self.item_url.set_text(&s.url);
             self.url = s.url.clone();
@@ -217,6 +225,16 @@ pub fn run<F>(
         }
 
         tray.refresh(&poll());
+    }
+}
+
+/// Deliberately explicit when on. "Input: on" would be easy to skim past for
+/// something that hands a remote machine your cursor and keyboard.
+fn input_line(enabled: bool) -> String {
+    if enabled {
+        "Clients CAN control this Mac".to_string()
+    } else {
+        "View only".to_string()
     }
 }
 

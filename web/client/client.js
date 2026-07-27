@@ -72,6 +72,8 @@ function newPeerConnection() {
   // thinks of the stream.
   window.__pc = pc;
 
+  attachInput(pc);
+
   pc.onconnectionstatechange = () => {
     if (pc.connectionState === "failed") {
       setStatus("Connection failed");
@@ -164,9 +166,115 @@ goBtn.onclick = () => {
   document.documentElement.requestFullscreen().catch(() => {});
 };
 
-// Pressing a key or clicking is how you would drive the second screen. TODO M5:
-// forward these over a DataChannel. Coordinates must be normalised against the
-// video element's *content box*, not the window, because object-fit: contain
-// letterboxes the video and the two differ.
+// ---------------------------------------------------------------------------
+// Input forwarding
+// ---------------------------------------------------------------------------
+//
+// Only active when the host opened an "input" DataChannel, which it does only
+// when input is enabled there. The client cannot turn this on by itself.
+
+let inputChannel = null;
+
+function attachInput(pc) {
+  pc.ondatachannel = (event) => {
+    if (event.channel.label !== "input") return;
+    inputChannel = event.channel;
+    inputChannel.onclose = () => {
+      inputChannel = null;
+    };
+    document.body.classList.add("interactive");
+  };
+}
+
+function sendInput(obj) {
+  if (inputChannel && inputChannel.readyState === "open") {
+    inputChannel.send(JSON.stringify(obj));
+  }
+}
+
+// Where the picture actually is inside the element.
+//
+// `object-fit: contain` letterboxes the video, so the element's box and the
+// picture's box are different rectangles. Normalising against the element gives
+// coordinates that are wrong by the size of the bars, and the error grows the
+// further the aspect ratios diverge. This computes the content box instead.
+function pointToVideo(clientX, clientY) {
+  const r = video.getBoundingClientRect();
+  const vw = video.videoWidth;
+  const vh = video.videoHeight;
+  if (!vw || !vh) return null;
+
+  const scale = Math.min(r.width / vw, r.height / vh);
+  const shownW = vw * scale;
+  const shownH = vh * scale;
+  const offsetX = r.left + (r.width - shownW) / 2;
+  const offsetY = r.top + (r.height - shownH) / 2;
+
+  const x = (clientX - offsetX) / shownW;
+  const y = (clientY - offsetY) / shownH;
+  // Outside the picture, in the letterbox bars.
+  if (x < 0 || x > 1 || y < 0 || y > 1) return null;
+  return { x, y };
+}
+
+const BUTTONS = ["left", "middle", "right"];
+
+function mods(e) {
+  return { shift: e.shiftKey, ctrl: e.ctrlKey, alt: e.altKey, meta: e.metaKey };
+}
+
+video.addEventListener("mousemove", (e) => {
+  const p = pointToVideo(e.clientX, e.clientY);
+  if (p) sendInput({ kind: "mouseMove", x: p.x, y: p.y });
+});
+
+video.addEventListener("mousedown", (e) => {
+  const p = pointToVideo(e.clientX, e.clientY);
+  if (!p) return;
+  e.preventDefault();
+  // Position first: a click carries no coordinates of its own, so it lands
+  // wherever the host's cursor already is.
+  sendInput({ kind: "mouseMove", x: p.x, y: p.y });
+  sendInput({ kind: "mouseButton", btn: BUTTONS[e.button] || "left", down: true });
+});
+
+window.addEventListener("mouseup", (e) => {
+  // On window, not the video: releasing outside the element still has to end
+  // the drag, or the host is left with a button held down forever.
+  if (!inputChannel) return;
+  sendInput({ kind: "mouseButton", btn: BUTTONS[e.button] || "left", down: false });
+});
+
+// Right-click should reach the Mac rather than open the browser's own menu.
+video.addEventListener("contextmenu", (e) => {
+  if (inputChannel) e.preventDefault();
+});
+
+video.addEventListener(
+  "wheel",
+  (e) => {
+    if (!inputChannel) return;
+    e.preventDefault();
+    sendInput({ kind: "scroll", dx: e.deltaX, dy: e.deltaY });
+  },
+  { passive: false }
+);
+
+function onKey(down) {
+  return (e) => {
+    if (!inputChannel) return;
+    // Leave the browser's own escape hatch alone, or there is no way out of
+    // full screen without killing the tab.
+    if (e.key === "Escape" && !document.fullscreenElement) return;
+    e.preventDefault();
+    // `code` is the physical key, so the Mac's own layout decides what it
+    // produces. Sending `key` would mean the client's layout had already been
+    // applied and the host's could not be.
+    sendInput({ kind: "key", code: e.code, down, mods: mods(e) });
+  };
+}
+
+window.addEventListener("keydown", onKey(true));
+window.addEventListener("keyup", onKey(false));
 
 connect();

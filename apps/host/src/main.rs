@@ -52,6 +52,7 @@
 //! cargo run -p annex-host -- m2 60     # M2, 60 frames to out.h264
 //! cargo run -p annex-host -- m3        # M3, stream the main display
 //! cargo run -p annex-host -- m3 virtual # M4, stream the virtual display
+//! cargo run -p annex-host -- --input   # allow clients to control this Mac
 //! ```
 
 mod app;
@@ -72,7 +73,18 @@ use std::time::Duration;
 const DEFAULT_HOLD_SECS: u64 = 20;
 
 fn main() {
-    let arg1 = std::env::args().nth(1).unwrap_or_default();
+    // Flags are recognised wherever they appear; the first non-flag argument
+    // selects the mode. Treating argv[1] as the mode unconditionally meant
+    // `annex --input` silently ran the M0 harness instead.
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    let flag = |name: &str| argv.iter().any(|a| a == name);
+    let positional: Vec<&String> = argv.iter().filter(|a| !a.starts_with("--")).collect();
+    let arg1 = positional
+        .first()
+        .map(|s| s.as_str())
+        .unwrap_or("")
+        .to_string();
+    let arg_at = |i: usize| positional.get(i).map(|s| s.as_str()).unwrap_or("");
 
     // Build-time helper, used by scripts/bundle.sh to produce the app icon.
     // Kept in the binary rather than a separate tool so the icon is generated
@@ -95,10 +107,9 @@ fn main() {
     if arg1.is_empty() || arg1 == "mirror" || arg1 == "extend" {
         let opts = app::Options {
             extend: arg1 != "mirror",
-            port: std::env::args()
-                .nth(2)
-                .and_then(|a| a.parse().ok())
-                .unwrap_or(8787),
+            // Off unless asked for, explicitly, by name.
+            allow_input: flag("--input"),
+            port: arg_at(1).parse().unwrap_or(8787),
             ..Default::default()
         };
         if let Err(e) = app::run(opts) {
@@ -109,14 +120,8 @@ fn main() {
     }
 
     if arg1 == "m1" {
-        let frames = std::env::args()
-            .nth(2)
-            .and_then(|a| a.parse().ok())
-            .unwrap_or(10);
-        let scale = std::env::args()
-            .nth(3)
-            .and_then(|a| a.parse().ok())
-            .unwrap_or(1);
+        let frames = arg_at(1).parse().unwrap_or(10);
+        let scale = arg_at(2).parse().unwrap_or(1);
         let out = std::path::PathBuf::from(if scale > 1 { "captures-2x" } else { "captures" });
         if let Err(e) = m1::run(frames, out, scale) {
             eprintln!("\n  M1 failed: {e}");
@@ -126,10 +131,7 @@ fn main() {
     }
 
     if arg1 == "m2" {
-        let frames = std::env::args()
-            .nth(2)
-            .and_then(|a| a.parse().ok())
-            .unwrap_or(60);
+        let frames = arg_at(1).parse().unwrap_or(60);
         let out = std::path::PathBuf::from("out.h264");
         if let Err(e) = m2::run(frames, out) {
             eprintln!("\n  M2 failed: {e}");
@@ -139,7 +141,7 @@ fn main() {
     }
 
     if arg1 == "m3" {
-        let arg2 = std::env::args().nth(2).unwrap_or_default();
+        let arg2 = arg_at(1);
         let use_virtual = arg2 == "virtual";
         let port = arg2.parse().unwrap_or(8787);
         if let Err(e) = m3::run(use_virtual, port) {

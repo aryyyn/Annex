@@ -75,6 +75,22 @@ ghost monitor you cannot clear without logging out.
 `cargo run --release -p annex-host -- mirror` streams your existing screen instead of adding
 a new one, which is useful for testing without the private API involved.
 
+### Controlling the Mac from the client
+
+```bash
+cargo run --release -p annex-host -- --input
+```
+
+Off unless you ask for it by name. This is the one capability that *writes*: everything else
+is a client watching, this lets one move your cursor and type. It needs the separate
+**Accessibility** grant, sits behind the same token as everything else, and the menu bar says
+plainly when it is on.
+
+You do not need it to use the second screen. The virtual display is part of your Mac's
+desktop, so your own trackpad and keyboard already work on it: move the cursor across and you
+are driving it, exactly like a real monitor. `--input` is for using the *other* laptop's
+trackpad and keyboard instead.
+
 ## How it works
 
 ![Annex system architecture](docs/architecture.svg)
@@ -176,7 +192,7 @@ already loaded into the process.
 | **M2** | Encode and verify | **Done.** VideoToolbox H.264 Main, Annex-B, zero-copy. ffmpeg decodes it with zero errors |
 | **M3** | WebRTC to browser | **Done.** Chrome connects, negotiates H.264, and decodes frames over the LAN |
 | **M4** | Extended display E2E | **Done.** `annex` creates a virtual display and streams it |
-| **M5** | Interactive input | DataChannel input, `CGEvent` injection |
+| **M5** | Interactive input | **Done.** `--input` lets clients drive this Mac's cursor and keyboard |
 | **M6** | Polish | **Mostly done:** menu bar UI, QR code, auth token and resolution picker all work. HEVC remains |
 | **M7** | Native client | winit and wgpu app with hardware decode for lowest latency |
 

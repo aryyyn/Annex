@@ -119,6 +119,13 @@ pub struct Options {
     pub print_qr: bool,
     /// Ceiling on simultaneous viewers.
     pub max_clients: u64,
+    /// Let clients drive this Mac's cursor and keyboard.
+    ///
+    /// Off by default, and deliberately a startup choice rather than a menu
+    /// toggle: the DataChannel is negotiated when a client connects, so
+    /// flipping it later would apply to some sessions and not others, which is
+    /// exactly the kind of half-state a capability like this must never have.
+    pub allow_input: bool,
 }
 
 impl Default for Options {
@@ -130,6 +137,7 @@ impl Default for Options {
             bitrate_kbps: 12_000,
             print_qr: true,
             max_clients: 4,
+            allow_input: false,
         }
     }
 }
@@ -204,15 +212,42 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let server = Arc::new(rt.block_on(Server::bind(RtcConfig {
-        bind_addr: format!("{bind_ip}:{}", opts.port).parse()?,
-        auth_token: Some(token),
-        allow_input: false,
-        max_clients: opts.max_clients,
-        width,
-        height,
-        fps: opts.fps,
-    }))?);
+    // ---- input, when enabled --------------------------------------------
+    //
+    // Events arrive on a webrtc-rs task but `CGEventPost` has to run on the
+    // main thread, so they cross a channel and are drained by the run loop.
+    let (input_tx, input_rx) = std::sync::mpsc::channel::<annex_core::InputEvent>();
+    // Counted separately from injection so delivery can be observed even when
+    // the Accessibility grant is missing and nothing is actually posted.
+    let input_seen = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let input_seen_report = Arc::clone(&input_seen);
+    let input_sink: Option<annex_transport::session::InputSink> = if opts.allow_input {
+        if !annex_input::has_permission() {
+            println!("\n{}\n", annex_input::permission_help());
+            request_accessibility();
+        }
+        let tx = input_tx.clone();
+        let seen = Arc::clone(&input_seen);
+        Some(Arc::new(move |ev| {
+            seen.fetch_add(1, Ordering::Relaxed);
+            let _ = tx.send(ev);
+        }))
+    } else {
+        None
+    };
+
+    let server = Arc::new(rt.block_on(Server::bind_with_input(
+        RtcConfig {
+            bind_addr: format!("{bind_ip}:{}", opts.port).parse()?,
+            auth_token: Some(token),
+            allow_input: opts.allow_input,
+            max_clients: opts.max_clients,
+            width,
+            height,
+            fps: opts.fps,
+        },
+        input_sink,
+    ))?);
 
     let url = server.connect_url();
     println!("  open on the other machine:\n");
@@ -247,6 +282,9 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
         Arc::clone(&server),
     )?);
 
+    if opts.allow_input {
+        println!("  INPUT       enabled: clients can control this Mac");
+    }
     println!("  running. Use the menu bar icon to quit.\n");
     if opts.extend {
         println!("  Drag a window off the edge of your screen to move it across.\n");
@@ -268,6 +306,7 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
     let mut bitrate = opts.bitrate_kbps;
     let ceiling = opts.bitrate_kbps;
     let mut size = (width, height);
+    let mut last_input_seen = 0u64;
 
     // Only a virtual display can be resized: changing a real monitor's mode
     // out from under its owner would be rude and surprising.
@@ -281,6 +320,19 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
         None => Vec::new(),
     };
 
+    // Built here, on the main thread, and never sent anywhere else.
+    let mut injector = if opts.allow_input {
+        match annex_input::Injector::new(display_id) {
+            Ok(i) => Some(i),
+            Err(e) => {
+                eprintln!("  input disabled: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let initial = tray::Status {
         url: url.clone(),
         clients: 0,
@@ -291,6 +343,7 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
         current_mode: current_size(display_id)
             .map(|(w, h)| format!("{w} x {h}"))
             .unwrap_or_default(),
+        input_enabled: opts.allow_input && injector.is_some(),
     };
 
     let requested_mode = Arc::new(std::sync::Mutex::new(None::<usize>));
@@ -299,6 +352,25 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
     tray::run(
         initial,
         move || {
+            // ---- client input, applied here because this is the main thread -
+            //
+            // `CGEventPost` requires it. Posting from the webrtc task instead
+            // produces events macOS silently discards, which looks like the
+            // client being ignored rather than an error.
+            if let Some(inj) = injector.as_mut() {
+                // Bounded per tick so a flood of events cannot starve the menu.
+                for _ in 0..256 {
+                    match input_rx.try_recv() {
+                        Ok(ev) => {
+                            if let Err(e) = inj.inject(ev) {
+                                eprintln!("  input: {e}");
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            }
+
             // ---- a resolution change, if the user picked one ---------------
             //
             // The display, the server and every connected peer survive this.
@@ -362,6 +434,11 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
                 }
             }
 
+            let n = input_seen_report.load(Ordering::Relaxed);
+            if n != last_input_seen {
+                last_input_seen = n;
+                println!("  input events received: {n}");
+            }
             tray::Status {
                 url: status_server.connect_url(),
                 clients: status_server.stats().clients_now.load(Ordering::Relaxed),
@@ -370,6 +447,7 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
                 resolution: size,
                 modes: offered.iter().map(|m| m.label()).collect(),
                 current_mode: format!("{} x {}", size.0, size.1),
+                input_enabled: injector.is_some(),
             }
         },
         Arc::clone(&running),
@@ -420,4 +498,16 @@ fn explain_permission_and_exit() {
                     .status();
             }
         });
+}
+
+/// Nudges macOS into showing the Accessibility prompt.
+///
+/// There is no request call for this the way there is for Screen Recording:
+/// macOS shows its dialogue when an app first tries to post an event, and the
+/// grant applies only from the next launch. Saying so avoids the reasonable
+/// conclusion that input is broken.
+fn request_accessibility() {
+    let _ = std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        .status();
 }
