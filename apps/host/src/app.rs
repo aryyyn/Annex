@@ -63,7 +63,12 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
     if !annex_capture::has_permission() {
         annex_capture::permission::request_permission();
         if !annex_capture::has_permission() {
+            // A bundled app has no terminal, so printing here reaches nobody:
+            // the user double-clicks, a system prompt appears, and the app
+            // seems to vanish. Say what happened, and open the right settings
+            // pane so the fix is one click rather than a hunt.
             eprintln!("{}", annex_capture::permission::permission_help());
+            explain_permission_and_exit();
             return Err("Screen Recording permission denied".into());
         }
     }
@@ -256,4 +261,34 @@ pub fn run(opts: Options) -> Result<(), Box<dyn std::error::Error>> {
     drop(vd);
     println!("  done");
     Ok(())
+}
+
+/// Tells the user what to do when the Screen Recording grant is missing.
+///
+/// macOS reads TCC decisions at process start, so approving the prompt does not
+/// help the *running* process. It has to be relaunched, and saying so plainly
+/// avoids the obvious conclusion that the app is broken.
+fn explain_permission_and_exit() {
+    let msg = "Annex needs Screen Recording permission.\n\n\
+               Enable Annex under Privacy & Security > Screen & System Audio \
+               Recording, then open Annex again.\n\n\
+               macOS only applies this permission when an app starts, so \
+               Annex has to be relaunched after you allow it.";
+    // AppleScript rather than an NSAlert: this runs before the run loop owns
+    // the main thread, and putting up AppKit UI here would mean standing up a
+    // second application surface for a single message.
+    let _ = std::process::Command::new("osascript")
+        .arg("-e")
+        .arg(format!(
+            r#"display dialog "{}" with title "Annex" buttons {{"Open Settings", "Quit"}} default button "Open Settings" with icon caution"#,
+            msg.replace('"', "'")
+        ))
+        .output()
+        .map(|out| {
+            if String::from_utf8_lossy(&out.stdout).contains("Open Settings") {
+                let _ = std::process::Command::new("open")
+                    .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+                    .status();
+            }
+        });
 }

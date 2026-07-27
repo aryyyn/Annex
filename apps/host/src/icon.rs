@@ -144,3 +144,189 @@ pub fn qr_text(text: &str) -> Option<String> {
     }
     Some(out)
 }
+
+// ---------------------------------------------------------------------------
+// Application icon
+// ---------------------------------------------------------------------------
+//
+// Separate from the menu bar glyph above, which is a monochrome template macOS
+// tints itself. This one is the icon in Finder, the Dock and Spotlight, so it
+// is full colour and carries the product's accent.
+//
+// Drawn rather than shipped as a file, so the repository holds no binary asset
+// and the icon can never drift from the code that describes it.
+
+/// Accent red, matching the design document.
+const ACCENT: [u8; 3] = [0xC0, 0x39, 0x2B];
+const ACCENT_DARK: [u8; 3] = [0x96, 0x2B, 0x20];
+
+/// Renders the application icon at `size` pixels square.
+///
+/// Rasterised at four times the target and box-filtered down. There is no
+/// anti-aliasing library here, and without supersampling the rounded corners
+/// and the glyph edges come out visibly jagged at the smaller sizes macOS asks
+/// for.
+pub fn app_icon_rgba(size: usize) -> Vec<u8> {
+    const SS: usize = 4;
+    let hi = size * SS;
+    let mut big = vec![0u8; hi * hi * 4];
+
+    let fsize = hi as f32;
+    // macOS icons sit inside their canvas rather than filling it, so the
+    // artwork is inset and the corner radius follows the squircle convention.
+    let margin = fsize * 0.09;
+    let (x0, y0) = (margin, margin);
+    let (x1, y1) = (fsize - margin, fsize - margin);
+    let radius = (x1 - x0) * 0.225;
+
+    for y in 0..hi {
+        for x in 0..hi {
+            let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
+            if !inside_rounded_rect(fx, fy, x0, y0, x1, y1, radius) {
+                continue;
+            }
+            // A vertical ramp so the tile has some depth rather than reading as
+            // a flat sticker.
+            let t = ((fy - y0) / (y1 - y0)).clamp(0.0, 1.0);
+            let px = (y * hi + x) * 4;
+            for c in 0..3 {
+                let a = ACCENT[c] as f32;
+                let b = ACCENT_DARK[c] as f32;
+                big[px + c] = (a + (b - a) * t) as u8;
+            }
+            big[px + 3] = 255;
+        }
+    }
+
+    // The glyph: a screen with a stand, in white, centred.
+    let cx = fsize / 2.0;
+    let sw = fsize * 0.46;
+    let sh = sw * 0.62;
+    let sx0 = cx - sw / 2.0;
+    let sx1 = cx + sw / 2.0;
+    let sy0 = fsize * 0.30;
+    let sy1 = sy0 + sh;
+    let stroke = fsize * 0.035;
+
+    let mut white = |x: usize, y: usize| {
+        if x < hi && y < hi {
+            let px = (y * hi + x) * 4;
+            if big[px + 3] > 0 {
+                big[px] = 255;
+                big[px + 1] = 255;
+                big[px + 2] = 255;
+            }
+        }
+    };
+
+    for y in 0..hi {
+        for x in 0..hi {
+            let (fx, fy) = (x as f32 + 0.5, y as f32 + 0.5);
+            let outer = inside_rounded_rect(fx, fy, sx0, sy0, sx1, sy1, stroke * 1.6);
+            let inner = inside_rounded_rect(
+                fx,
+                fy,
+                sx0 + stroke,
+                sy0 + stroke,
+                sx1 - stroke,
+                sy1 - stroke,
+                stroke * 0.8,
+            );
+            if outer && !inner {
+                white(x, y);
+            }
+        }
+    }
+
+    // Neck and foot.
+    let neck_w = fsize * 0.08;
+    for y in (sy1 as usize)..((sy1 + fsize * 0.07) as usize) {
+        for x in ((cx - neck_w / 2.0) as usize)..((cx + neck_w / 2.0) as usize) {
+            white(x, y);
+        }
+    }
+    let foot_w = fsize * 0.26;
+    let foot_y = sy1 + fsize * 0.07;
+    for y in (foot_y as usize)..((foot_y + stroke * 1.2) as usize) {
+        for x in ((cx - foot_w / 2.0) as usize)..((cx + foot_w / 2.0) as usize) {
+            white(x, y);
+        }
+    }
+
+    downsample(&big, hi, SS)
+}
+
+/// Signed test for a rounded rectangle, corners included.
+fn inside_rounded_rect(x: f32, y: f32, x0: f32, y0: f32, x1: f32, y1: f32, r: f32) -> bool {
+    if x < x0 || x > x1 || y < y0 || y > y1 {
+        return false;
+    }
+    let cx = x.clamp(x0 + r, x1 - r);
+    let cy = y.clamp(y0 + r, y1 - r);
+    let (dx, dy) = (x - cx, y - cy);
+    dx * dx + dy * dy <= r * r + 0.001
+}
+
+/// Box filter by an integer factor, averaging in straight RGBA.
+fn downsample(src: &[u8], src_dim: usize, factor: usize) -> Vec<u8> {
+    let dst_dim = src_dim / factor;
+    let mut out = vec![0u8; dst_dim * dst_dim * 4];
+    let n = (factor * factor) as u32;
+    for y in 0..dst_dim {
+        for x in 0..dst_dim {
+            let mut acc = [0u32; 4];
+            for sy in 0..factor {
+                for sx in 0..factor {
+                    let i = ((y * factor + sy) * src_dim + (x * factor + sx)) * 4;
+                    for c in 0..4 {
+                        acc[c] += src[i + c] as u32;
+                    }
+                }
+            }
+            let o = (y * dst_dim + x) * 4;
+            for c in 0..4 {
+                out[o + c] = (acc[c] / n) as u8;
+            }
+        }
+    }
+    out
+}
+
+/// Writes the iconset macOS expects, for `iconutil` to compile into an `.icns`.
+///
+/// The names are fixed by the tool: it will not accept anything else.
+pub fn write_iconset(dir: &std::path::Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    // (points, scale) pairs. The 2x entries are what Retina displays use.
+    const WANTED: [(usize, usize); 10] = [
+        (16, 1),
+        (16, 2),
+        (32, 1),
+        (32, 2),
+        (128, 1),
+        (128, 2),
+        (256, 1),
+        (256, 2),
+        (512, 1),
+        (512, 2),
+    ];
+    for (pt, scale) in WANTED {
+        let px = pt * scale;
+        let rgba = app_icon_rgba(px);
+        let name = if scale == 1 {
+            format!("icon_{pt}x{pt}.png")
+        } else {
+            format!("icon_{pt}x{pt}@2x.png")
+        };
+        let file = std::fs::File::create(dir.join(name))?;
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(file), px as u32, px as u32);
+        enc.set_color(png::ColorType::Rgba);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut w = enc
+            .write_header()
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+        w.write_image_data(&rgba)
+            .map_err(|e| std::io::Error::other(e.to_string()))?;
+    }
+    Ok(())
+}

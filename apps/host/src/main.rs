@@ -74,6 +74,23 @@ const DEFAULT_HOLD_SECS: u64 = 20;
 fn main() {
     let arg1 = std::env::args().nth(1).unwrap_or_default();
 
+    // Build-time helper, used by scripts/bundle.sh to produce the app icon.
+    // Kept in the binary rather than a separate tool so the icon is generated
+    // by the same code that documents it.
+    if arg1 == "--emit-iconset" {
+        let dir = std::env::args()
+            .nth(2)
+            .unwrap_or_else(|| "Annex.iconset".into());
+        match icon::write_iconset(std::path::Path::new(&dir)) {
+            Ok(()) => println!("wrote iconset to {dir}"),
+            Err(e) => {
+                eprintln!("could not write iconset: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
     // No arguments, or `mirror`: the actual application.
     if arg1.is_empty() || arg1 == "mirror" || arg1 == "extend" {
         let opts = app::Options {

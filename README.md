@@ -15,13 +15,37 @@ The Mac runs a single Rust binary. The second machine opens a URL in its browser
 > menu bar app to drive it. Verified 27 July 2026 on macOS 26.5 at 57 fps with zero freezes
 > and zero dropped frames. Input forwarding (M5) is the next thing. See [Roadmap](#roadmap).
 
-## Run it
+## Install it
+
+```bash
+./scripts/bundle.sh
+open target/bundle/Annex.app
+```
+
+That produces `Annex.app`, a real menu bar application: no Dock icon, launchable from
+Spotlight, and with the Screen Recording permission attached to **Annex** rather than to
+whatever terminal you happened to start it from. Drag it to `/Applications` if you want to
+keep it.
+
+The icon is drawn by the same code that documents it (`apps/host/src/icon.rs`), so the
+repository carries no binary asset and the artwork cannot drift from its source.
+
+> [!NOTE]
+> With no Developer ID certificate installed the bundle is signed **ad-hoc**. It runs, but
+> macOS identifies an ad-hoc app by the hash of its code, which changes on every rebuild, so
+> the Screen Recording grant has to be given again after each build and stale entries collect
+> in System Settings. A Developer ID certificate gives the app a stable identity and is also
+> what allows notarising it for anyone else to run. The build script picks one up
+> automatically if you install one.
+
+## Or run it from a terminal
 
 ```bash
 cargo run --release -p annex-host
 ```
 
-That creates a new desktop, starts streaming it, and puts an icon in your menu bar. The
+Same thing without the bundle, which is convenient while developing. It creates a new
+desktop, starts streaming it, and puts an icon in your menu bar. The
 terminal prints a URL and a scannable QR code; open either on the other machine and drag a
 window off the edge of your screen to move it across.
 
