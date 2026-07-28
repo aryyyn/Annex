@@ -85,13 +85,24 @@ fn main() {
         .unwrap_or("")
         .to_string();
     let arg_at = |i: usize| positional.get(i).map(|s| s.as_str()).unwrap_or("");
+    let value_of = |name: &str| {
+        argv.iter()
+            .position(|a| a == name)
+            .and_then(|i| argv.get(i + 1))
+            .cloned()
+    };
 
     // Build-time helper, used by scripts/bundle.sh to produce the app icon.
     // Kept in the binary rather than a separate tool so the icon is generated
     // by the same code that documents it.
-    if arg1 == "--emit-iconset" {
-        let dir = std::env::args()
-            .nth(2)
+    if flag("--emit-iconset") {
+        // The directory follows the flag, so it is read by position relative to
+        // it rather than from `positional`, which strips flags out.
+        let dir = argv
+            .iter()
+            .position(|a| a == "--emit-iconset")
+            .and_then(|i| argv.get(i + 1))
+            .cloned()
             .unwrap_or_else(|| "Annex.iconset".into());
         match icon::write_iconset(std::path::Path::new(&dir)) {
             Ok(()) => println!("wrote iconset to {dir}"),
@@ -104,12 +115,19 @@ fn main() {
     }
 
     // No arguments, or `mirror`: the actual application.
+    if flag("--help") || flag("-h") || arg1 == "help" {
+        print_help();
+        return;
+    }
+
     if arg1.is_empty() || arg1 == "mirror" || arg1 == "extend" {
         let opts = app::Options {
             extend: arg1 != "mirror",
             // Off unless asked for, explicitly, by name.
             allow_input: flag("--input"),
-            port: arg_at(1).parse().unwrap_or(8787),
+            port: value_of("--port")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(8787),
             ..Default::default()
         };
         if let Err(e) = app::run(opts) {
@@ -151,7 +169,17 @@ fn main() {
         return;
     }
 
-    let hold = arg1
+    // Everything past here is a milestone harness, and each one is named. An
+    // unrecognised argument is a mistake, not an invitation to guess: a bare
+    // number used to mean "M0 hold seconds", so `annex 8788` quietly ran the
+    // spike for two hours instead of serving on port 8788.
+    if arg1 != "m0" {
+        eprintln!("annex: unknown argument `{arg1}`\n");
+        print_help();
+        std::process::exit(2);
+    }
+
+    let hold = arg_at(1)
         .parse()
         .ok()
         .map(Duration::from_secs)
@@ -236,4 +264,33 @@ fn main() {
     }
 
     println!("\n  M0 passed: created, visible, and removed cleanly. No ghost display.");
+}
+
+fn print_help() {
+    println!(
+        "\
+Annex: turn any laptop on your network into a second monitor for this Mac.
+
+USAGE
+  annex                    create a new desktop and stream it (the normal use)
+  annex mirror             stream this screen instead of adding a desktop
+  annex help               show this
+
+OPTIONS
+  --port <n>               listen on this port (default 8787)
+  --input                  let clients control this Mac's cursor and keyboard.
+                           Off by default. Needs the Accessibility permission,
+                           and the menu bar shows when it is on.
+
+DIAGNOSTICS
+  Each isolates one layer, which is what you want when something breaks.
+
+  annex m0 [seconds]       create a virtual display, hold, remove it
+  annex m1 [frames] [x]    capture the virtual display to PNG
+  annex m2 [frames]        encode to H.264, write out.h264
+  annex m3 [virtual|port]  stream over WebRTC without the menu bar app
+
+The URL printed at startup carries a one-time access token. Anyone on this
+network who has it can see this screen."
+    );
 }

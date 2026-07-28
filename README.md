@@ -19,8 +19,12 @@ The Mac runs a single Rust binary. The second machine opens a URL in its browser
 
 ```bash
 ./scripts/bundle.sh
-open target/bundle/Annex.app
+cp -r target/bundle/Annex.app /Applications/
+open /Applications/Annex.app
 ```
+
+The first launch will ask for **Screen Recording**. Grant it, then **open Annex again**:
+macOS only applies the permission when an app starts, so the first run cannot use it.
 
 That produces `Annex.app`, a real menu bar application: no Dock icon, launchable from
 Spotlight, and with the Screen Recording permission attached to **Annex** rather than to
@@ -164,6 +168,7 @@ cargo run -p annex-host -- 20     # M0: create a display, hold 20s, remove it
 cargo run -p annex-host -- m1 10  # M1: capture 10 frames to ./captures
 cargo run -p annex-host -- m2 45  # M2: encode 45 frames to out.h264
 cargo run -p annex-host -- m3     # M3: stream the main display, open the printed URL
+annex help                        # every mode and flag
 ```
 
 Those milestone harnesses are kept because each isolates one layer, which is what you want

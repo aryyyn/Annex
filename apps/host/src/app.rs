@@ -476,11 +476,9 @@ fn current_size(id: u32) -> Option<(u32, u32)> {
 /// help the *running* process. It has to be relaunched, and saying so plainly
 /// avoids the obvious conclusion that the app is broken.
 fn explain_permission_and_exit() {
-    let msg = "Annex needs Screen Recording permission.\n\n\
-               Enable Annex under Privacy & Security > Screen & System Audio \
-               Recording, then open Annex again.\n\n\
-               macOS only applies this permission when an app starts, so \
-               Annex has to be relaunched after you allow it.";
+    // One source of truth: the same text the terminal path prints, so the two
+    // cannot drift into disagreeing about what to do.
+    let msg = annex_capture::permission::permission_help();
     // AppleScript rather than an NSAlert: this runs before the run loop owns
     // the main thread, and putting up AppKit UI here would mean standing up a
     // second application surface for a single message.

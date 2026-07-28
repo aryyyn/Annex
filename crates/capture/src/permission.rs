@@ -35,14 +35,45 @@ pub fn request_permission() -> bool {
     CGRequestScreenCaptureAccess()
 }
 
+/// Whether this process is running from an application bundle.
+///
+/// It changes the advice materially. A bundle is granted permission under its
+/// own name and is relaunched on its own; a bare binary borrows the terminal's
+/// grant and needs the terminal restarted. Telling someone to restart a
+/// terminal they are not using is how a correct message becomes a wrong one.
+pub fn is_bundled() -> bool {
+    std::env::current_exe()
+        .map(|p| p.to_string_lossy().contains(".app/Contents/MacOS/"))
+        .unwrap_or(false)
+}
+
 /// A human-readable explanation for when the grant is missing.
-pub fn permission_help() -> &'static str {
-    "Screen Recording permission is required.\n\
-     \n\
-     macOS should have shown a prompt. If it did not, or you dismissed it, open\n\
-     System Settings > Privacy & Security > Screen & System Audio Recording and\n\
-     enable the entry for your terminal.\n\
-     \n\
-     Then restart the terminal completely. TCC decisions are read when a process\n\
-     starts, so a running shell keeps the old answer."
+pub fn permission_help() -> String {
+    if is_bundled() {
+        "Screen Recording permission is required.\n\
+         \n\
+         Open System Settings > Privacy & Security > Screen & System Audio\n\
+         Recording and enable Annex, then open Annex again.\n\
+         \n\
+         macOS applies this permission only when an app starts, so it has to be\n\
+         relaunched after you allow it.\n\
+         \n\
+         If Annex is already listed but still refused, this build was signed\n\
+         ad-hoc and macOS sees each rebuild as a different app. Remove the old\n\
+         entry and add this one."
+            .to_string()
+    } else {
+        "Screen Recording permission is required.\n\
+         \n\
+         Running from a terminal means macOS attaches the grant to the terminal\n\
+         rather than to Annex. Open System Settings > Privacy & Security >\n\
+         Screen & System Audio Recording and enable your terminal.\n\
+         \n\
+         Then quit and reopen the terminal completely. TCC decisions are read\n\
+         when a process starts, so a running shell keeps the old answer.\n\
+         \n\
+         Building the app with scripts/bundle.sh avoids this: the grant then\n\
+         belongs to Annex itself."
+            .to_string()
+    }
 }
