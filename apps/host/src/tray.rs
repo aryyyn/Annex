@@ -20,8 +20,8 @@
 //! without logging out.
 
 use crate::icon;
-use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
-use objc2_foundation::{MainThreadMarker, NSDate, NSDefaultRunLoopMode, NSRunLoop};
+use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy, NSEventMask};
+use objc2_foundation::{MainThreadMarker, NSDate, NSDefaultRunLoopMode};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tray_icon::menu::{CheckMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu};
@@ -201,11 +201,30 @@ pub fn run<F>(
     app.finishLaunching();
 
     while running.load(Ordering::SeqCst) {
-        // Let AppKit process events for a slice of time. The run loop returns
-        // when the date passes or when it runs out of work, whichever is first.
+        // Block up to 0.2s for the next AppKit event, then drain and dispatch
+        // whatever else is queued. Running the run loop alone services timers
+        // and the menu's own labels, which is why the icon draws and refreshes,
+        // but a status item only pops its menu when the click is delivered
+        // through NSApplication's event dispatch, which is what sendEvent: does.
+        // Draining keeps the refresh cadence near 0.2s while never dropping a
+        // click.
         unsafe {
             let until = NSDate::dateWithTimeIntervalSinceNow(0.2);
-            NSRunLoop::currentRunLoop().runMode_beforeDate(NSDefaultRunLoopMode, &until);
+            let mut event = app.nextEventMatchingMask_untilDate_inMode_dequeue(
+                NSEventMask::Any,
+                Some(&until),
+                NSDefaultRunLoopMode,
+                true,
+            );
+            while let Some(ev) = event {
+                app.sendEvent(&ev);
+                event = app.nextEventMatchingMask_untilDate_inMode_dequeue(
+                    NSEventMask::Any,
+                    None,
+                    NSDefaultRunLoopMode,
+                    true,
+                );
+            }
         }
 
         while let Ok(event) = menu_rx.try_recv() {
