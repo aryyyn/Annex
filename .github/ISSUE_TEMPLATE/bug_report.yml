@@ -1,0 +1,77 @@
+name: Bug report
+description: Something in Annex does not work as described
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file this. Annex is macOS specific and timing
+        sensitive, so the details below are what make a report reproducible. For anything
+        security sensitive, do not file here: follow SECURITY.md instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what did you get instead?
+      placeholder: I opened the printed URL on the other laptop and the page stayed on "Negotiating".
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: Apple menu, About This Mac. Include the build if you have it.
+      placeholder: "26.5 (Apple Silicon)"
+    validations:
+      required: true
+  - type: dropdown
+    id: hardware
+    attributes:
+      label: Mac hardware
+      options:
+        - Apple Silicon
+        - Intel
+    validations:
+      required: true
+  - type: input
+    id: annex-version
+    attributes:
+      label: Annex version or commit
+      description: The git commit you built, or the release tag.
+      placeholder: "3f6c3b1, or v0.1.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: how-run
+    attributes:
+      label: How are you running it
+      options:
+        - Annex.app bundle
+        - cargo run
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Client browser and device
+      description: What is opening the URL on the other machine.
+      placeholder: "Chrome 140 on a Windows laptop"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output and logs
+      description: >
+        Paste what Annex printed. If it is the bundle, capture output by launching with
+        `open --stdout /tmp/annex.log --stderr /tmp/annex.err /Applications/Annex.app` and
+        attach the files. For WebRTC issues, the milestone harness logs more:
+        `RUST_LOG=annex=debug,webrtc=debug cargo run -p annex-host -- m3`.
+      render: text
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Confirmations
+      options:
+        - label: Both machines are on the same network
+          required: true
+        - label: This is not a security report (those go through SECURITY.md)
+          required: true

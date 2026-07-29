@@ -11,9 +11,10 @@ No HDMI. No capture card. No cloud. Both machines just need to be on the same Wi
 The Mac runs a single Rust binary. The second machine opens a URL in its browser.
 
 > [!NOTE]
-> **Status: it works.** Virtual display, capture, H.264 encode, WebRTC to a browser, and a
-> menu bar app to drive it. Verified 27 July 2026 on macOS 26.5 at 57 fps with zero freezes
-> and zero dropped frames. Input forwarding (M5) is the next thing. See [Roadmap](#roadmap).
+> **Status: it works.** Virtual display, capture, H.264 encode, WebRTC to a browser, a menu
+> bar app to drive it, and optional input forwarding so a client can control the Mac (M5).
+> Verified 27 July 2026 on macOS 26.5 at 57 fps with zero freezes and zero dropped frames. A
+> native low-latency client (M7) is next. See [Roadmap](#roadmap).
 
 ## Install it
 

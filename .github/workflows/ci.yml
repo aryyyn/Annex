@@ -1,0 +1,58 @@
+name: CI
+
+# Annex is macOS-only: it builds against ScreenCaptureKit, VideoToolbox and the
+# objc2 bindings, none of which exist on Linux runners. Everything here runs on
+# macOS. The tests are pure logic (auth, keymap, Annex-B parsing, protocol), so
+# they need neither a display nor the Screen Recording permission and run fine
+# in a headless runner.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  check:
+    name: fmt, clippy, build, test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # rust-toolchain.toml pins the channel and components (rustfmt, clippy),
+      # so rustup installs the right toolchain automatically on first cargo use.
+      - name: Show toolchain
+        run: |
+          rustup show active-toolchain || rustup show
+          cargo --version
+          rustc --version
+
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-${{ runner.os }}-
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --workspace --locked
+
+      - name: Test
+        run: cargo test --workspace --locked

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security report
+    url: https://github.com/aryyyn/Annex/security/advisories/new
+    about: Report a vulnerability privately. Do not open a public issue for security problems.
+  - name: Architecture and design
+    url: https://github.com/aryyyn/Annex/blob/main/docs/architecture.html
+    about: Read the full design document before proposing structural changes.
